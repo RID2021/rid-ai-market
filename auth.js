@@ -132,6 +132,18 @@
     $("#logout").onclick = logout;
   }
 
+  // Supabase에서 켜진 로그인 방식의 버튼만 보인다 (/auth/v1/settings, 공개 값). 못 읽으면 모두 보인다
+  async function showProviders() {
+    try {
+      const res = await fetch(`${cfg.supabaseUrl}/auth/v1/settings`, { headers: { apikey: cfg.supabaseAnonKey } });
+      const ext = (await res.json()).external ?? {};
+      $("#login-microsoft").hidden = !ext.azure;
+      $("#login-microsoft").nextElementSibling.hidden = !ext.azure; // 안내 문구
+      $("#login-google").hidden = !ext.google;
+      if (!ext.azure && !ext.google) $(".gate .or").hidden = true;
+    } catch (e) { console.warn("로그인 설정을 읽지 못했습니다", e); }
+  }
+
   // 로그인 화면 안내: 앱 안 브라우저·저장 막힘·초대 링크. 쓸 수 없는 초대 링크면 기억한 코드를 지운다
   function showBrowserNotes() {
     const box = $("#browser-note");
@@ -478,7 +490,7 @@
     sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
     wireGate();
     const { data: { session } } = await sb.auth.getSession();
-    if (!session) { showGate("login"); showBrowserNotes(); showInvite().catch((e) => console.warn(e)); return null; }
+    if (!session) { showGate("login"); showBrowserNotes(); showProviders(); showInvite().catch((e) => console.warn(e)); return null; }
     me = session.user;
     // 가입 정보 확인·보충 (회사 계정 자동 승인 포함). 서버 함수가 아직 없으면(설정 전) 건너뛴다
     const ens = await sb.rpc("ensure_my_profile");
