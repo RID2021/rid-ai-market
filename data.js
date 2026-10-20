@@ -17,7 +17,7 @@
   const SEARCH_FIELDS = ["name", "description", "tags", "category", "facets"];
   // 세부 분류 갈래 순서 (scripts/audio/facets.mjs의 FACET_ORDER와 같아야 한다 — 시험이 확인)
   const FACET_ORDER = {
-    bgm: ["장르", "분위기", "빠르기", "음역", "악기", "쓰임새", "조성", "박자", "드럼"],
+    bgm: ["장르", "편성", "분위기", "빠르기", "음역", "악기", "악기 수", "쓰임새", "조성", "박자", "드럼"],
     sfx: ["종류", "길이", "소리"],
   };
   // 세부 분류 개수를 담은 특별한 행 (애셋이 아니다. 목록·개수에서 뺀다)
