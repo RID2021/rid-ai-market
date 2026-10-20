@@ -208,16 +208,46 @@
     };
   }
 
-  // app.js가 25분마다 불러 화면용 주소를 새로 받는다
-  window.ridRefreshUrls = async (items) => (sb ? signItems(items) : items);
+  // 화면에 올릴 애셋의 그림 주소를 서명한다 (app.js가 목록을 받을 때마다, 그리고 25분마다 부른다)
+  window.ridSign = async (items) => (sb ? signItems(items) : items);
+  window.ridRefreshUrls = window.ridSign;
 
-  // app.js가 부른다: 승인된 사용자면 애셋 목록을, 아니면 관문을 보여 주고 null을 돌려준다
+  // 로컬 개발: catalog.json을 같은 규칙으로 메모리에서 나눠 준다 (?catalog=1이면 Supabase 설정이 있어도 로컬 목록)
+  async function localStart() {
+    const res = await fetch("catalog.json", { cache: "no-cache" });
+    return { source: window.RidData.localSource((await res.json()).items), sign: window.ridSign };
+  }
+
+  // 게시 직후 예전 index.html이 캐시에 남아 data.js 없이 이 파일을 불렀을 때를 대비해 직접 불러온다
+  const ensureData = () => window.RidData ? Promise.resolve() : new Promise((ok, no) => {
+    const s = document.createElement("script");
+    s.src = "data.js";
+    s.onload = ok; s.onerror = () => no(new Error("data.js를 불러오지 못했습니다. 새로고침해 주세요"));
+    document.head.append(s);
+  });
+
+  // 예전 app.js가 캐시에 남아 있을 때를 위한 호환: 목록 전체를 받아 서명해 돌려준다 (새 app.js는 쓰지 않는다)
   window.ridLoadCatalog = async function () {
+    const st = await window.ridStart();
+    if (!st) return null;
+    const all = [];
+    let total = null;
+    for (let offset = 0; ; ) {
+      const page = await st.source.page({ offset, limit: 1000 });
+      total ??= page.total;
+      all.push(...page.items);
+      offset += page.items.length; // 받은 개수만큼 넘어간다 (서버 한도가 1000보다 작아도 빠지지 않게)
+      if (!page.items.length || all.length >= total) break;
+    }
+    return st.sign(all);
+  };
+
+  // app.js가 부른다: 승인된 사용자면 목록 데이터 창구 { source, sign }를, 아니면 관문을 보여 주고 null을 돌려준다
+  window.ridStart = async function () {
+    await ensureData();
+    if (isLocal && new URLSearchParams(location.search).has("catalog")) return localStart();
     if (!(cfg.supabaseUrl && cfg.supabaseAnonKey)) {
-      if (isLocal) {
-        const res = await fetch("catalog.json", { cache: "no-cache" });
-        return (await res.json()).items;
-      }
+      if (isLocal) return localStart();
       showGate("error", "사이트 설정이 아직 끝나지 않았습니다. 관리자에게 문의하세요.");
       return null;
     }
@@ -250,15 +280,7 @@
     document.body.classList.remove("gated");
     showUser(me, profile);
     if (isCompany(me.email)) setupAdmin().catch(() => { $("#admin-open").hidden = true; });
-    // 서버가 한 번에 돌려주는 줄 수에 한도(기본 1000)가 있어 나눠 받는다
-    const rows = [];
-    for (let from = 0; ; ) {
-      const { data, error } = await sb.from("assets").select("data").order("id").range(from, from + 999);
-      if (error) throw new Error(`목록을 받지 못했습니다: ${error.message}`);
-      rows.push(...data);
-      if (!data.length) break;
-      from += data.length;
-    }
-    return signItems(rows.map((r) => r.data));
+    // 목록은 화면이 필요한 만큼만 서버에서 나눠 받는다 (data.js)
+    return { source: window.RidData.serverSource(sb), sign: window.ridSign };
   };
 })();

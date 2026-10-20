@@ -1,4 +1,5 @@
-// RID AI MARKET: catalog.json을 읽어 컬렉션 배너·목록·상세·찜·가방(ZIP 받기)을 그린다
+// RID AI MARKET: 컬렉션 배너·목록·상세·찜·가방(ZIP 받기)을 그린다
+// 목록은 data.js가 60개씩 나눠 받아 온다 (애셋이 수만 개여도 처음 화면은 가볍게). 아래로 내리면 다음 묶음을 받는다
 const $ = (s) => document.querySelector(s);
 
 // 종류(칩) 묶음: 일러스트는 스타일별로, 그 밖은 종류별로
@@ -20,7 +21,10 @@ const store = {
   set(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* 저장 못 해도 화면은 동작 */ } },
 };
 const state = {
-  items: [], byId: new Map(), group: "", q: "", sort: "new", favOnly: false, hero: 0,
+  source: null, sign: async (items) => items, // auth.js의 ridStart가 채운다
+  items: [], total: null, offset: 0, done: false, seq: 0, // 지금 목록에 받아 둔 애셋 (조건이 바뀌면 처음부터)
+  counts: {}, heroCols: [], bagItems: [],
+  group: "", q: "", sort: "new", favOnly: false, hero: 0,
   fav: new Set(store.get("ridmarket.fav")), bag: new Set(store.get("ridmarket.bag")),
 };
 
@@ -45,57 +49,39 @@ function bgOf(it) {
 }
 const subOf = (it) => groupOf(it).sub ?? `픽셀아트 · ${it.category}`;
 
-function matches(it) {
-  if (state.group && groupOf(it).key !== state.group) return false;
-  if (state.favOnly && !state.fav.has(it.id)) return false;
-  if (!state.q) return true;
-  const hay = [it.name, it.category, it.description, it.id, groupOf(it).label, ...it.tags].join(" ").toLowerCase();
-  return state.q.toLowerCase().split(/\s+/).every((w) => hay.includes(w));
-}
-
-function sorted(list) {
-  const out = [...list];
-  if (state.sort === "name") out.sort((a, b) => a.name.localeCompare(b.name, "ko"));
-  else if (state.sort === "score") out.sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
-  else {
-    // 최신순: 일러스트 → 효과 → 픽셀아트, 같은 날짜 안에서는 검수 점수 높은 것부터
-    const rank = (it) => (it.kind === "illust" ? 0 : it.kind === "effect" ? 1 : 2);
-    out.sort((a, b) => rank(a) - rank(b) || (b.added || "").localeCompare(a.added || "") || (b.score ?? 0) - (a.score ?? 0));
-  }
-  return out;
-}
-
 // ---------- 배너 ----------
-function heroCollections() {
-  return GROUPS.filter((g) => g.hero).map((g) => {
-    const items = state.items.filter(g.test);
-    const top = [...items].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).slice(0, 3);
-    return { g, items, top };
-  }).filter((c) => c.items.length >= 3);
+// 묶음마다 검수 점수 상위 3개와 개수만 받는다
+async function loadHero() {
+  const groups = GROUPS.filter((g) => g.hero && (state.counts[g.key] ?? 0) >= 3);
+  const tops = await Promise.all(groups.map((g) => state.source.top(g.key, 3)));
+  const cols = groups.map((g, i) => ({ g, n: state.counts[g.key], top: tops[i] }));
+  await state.sign(cols.flatMap((c) => c.top));
+  state.heroCols = cols;
 }
 
 function renderHero() {
-  const cols = heroCollections();
+  const cols = state.heroCols;
   if (!cols.length) { $("#hero").hidden = true; return; }
+  $("#hero").hidden = false;
   const c = cols[state.hero % cols.length];
   $("#hero-title").textContent = c.g.hero.title;
-  $("#hero-sub").textContent = c.g.hero.sub(c.items.length);
+  $("#hero-sub").textContent = c.g.hero.sub(c.n);
   $("#hero-cards").replaceChildren(...c.top.map((it) => el("div", { class: `hc ${bgOf(it)}` }, el("img", { src: it.thumb, alt: "" }))));
   $("#hero-dots").replaceChildren(...cols.map((col, i) =>
     el("button", { type: "button", role: "tab", "aria-selected": String(i === state.hero % cols.length), "aria-label": col.g.hero.title,
       onclick: () => { state.hero = i; renderHero(); } })));
   $("#hero-go").onclick = () => {
     state.group = c.g.key;
-    renderChips(); renderGrid();
+    renderChips(); resetGrid();
     $("#cats").scrollIntoView({ behavior: "smooth", block: "start" });
   };
 }
 
 // ---------- 칩·목록 ----------
 function renderChips() {
-  const chips = [{ key: "", label: "전체", n: state.items.length }, ...GROUPS.map((g) => ({ key: g.key, label: g.label, n: state.items.filter(g.test).length }))].filter((c) => c.n);
+  const chips = [{ key: "", label: "전체" }, ...GROUPS].map((g) => ({ key: g.key, label: g.label, n: state.counts[g.key] ?? 0 })).filter((c) => c.n);
   $("#cats").replaceChildren(...chips.map((c) =>
-    el("button", { class: "chip", type: "button", "aria-pressed": String(state.group === c.key), onclick: () => { state.group = c.key; renderChips(); renderGrid(); } },
+    el("button", { class: "chip", type: "button", "aria-pressed": String(state.group === c.key), onclick: () => { state.group = c.key; renderChips(); resetGrid(); } },
       c.label, el("span", { class: "n" }, String(c.n)))));
 }
 
@@ -105,31 +91,115 @@ function heartBtn(it, cls = "heart") {
   return b;
 }
 
-function renderGrid() {
-  const list = sorted(state.items.filter(matches));
-  $("#grid").replaceChildren(...list.map((it) => {
-    const inBag = state.bag.has(it.id);
-    const plus = el("button", { class: "plus", type: "button", "aria-pressed": String(inBag), "aria-label": inBag ? `${it.name} 가방에서 빼기` : `${it.name} 가방에 담기` }, inBag ? "✓" : "+");
-    plus.addEventListener("click", () => { toggleBag(it.id); renderGrid(); });
-    return el("article", { class: "card" },
-      el("div", { class: "tile-wrap" },
-        el("button", { class: `tile ${bgOf(it)} ${it.kind === "pixel" ? "pixelart" : ""}`, type: "button", "aria-label": `${it.name} 자세히 보기`, onclick: () => openDetail(it) },
-          el("img", { src: it.thumb ?? it.preview, alt: "", loading: "lazy" })),
-        it.gif && it.kind === "illust" ? el("span", { class: "anim" }, "GIF 포함") : null,
-        heartBtn(it)),
-      el("div", { class: "card-foot" },
-        el("div", {}, el("h3", {}, it.name), el("p", { class: "sub" }, subOf(it))),
-        plus));
-  }));
-  $("#empty").hidden = list.length > 0;
-  $("#count").textContent = state.favOnly ? `찜한 애셋 ${list.length}개` : `${list.length}개`;
+function paintPlus(plus, it) {
+  const inBag = state.bag.has(it.id);
+  plus.setAttribute("aria-pressed", String(inBag));
+  plus.setAttribute("aria-label", inBag ? `${it.name} 가방에서 빼기` : `${it.name} 가방에 담기`);
+  plus.textContent = inBag ? "✓" : "+";
+}
+
+function card(it) {
+  const plus = el("button", { class: "plus", type: "button" });
+  paintPlus(plus, it);
+  plus.addEventListener("click", () => { toggleBag(it.id); paintPlus(plus, it); });
+  const badge = it.gif && it.kind === "illust" ? (it.motion ? `GIF · ${it.motion}` : "GIF 포함") : null;
+  return el("article", { class: "card", "data-id": it.id },
+    el("div", { class: "tile-wrap" },
+      el("button", { class: `tile ${bgOf(it)} ${it.kind === "pixel" ? "pixelart" : ""}`, type: "button", "aria-label": `${it.name} 자세히 보기`, onclick: () => openDetail(it) },
+        el("img", { src: it.thumb ?? it.preview, alt: "", loading: "lazy" })),
+      badge ? el("span", { class: "anim" }, badge) : null,
+      heartBtn(it)),
+    el("div", { class: "card-foot" },
+      el("div", {}, el("h3", {}, it.name), el("p", { class: "sub" }, subOf(it))),
+      plus));
+}
+
+// 가방 표시(+/✓)만 다시 칠한다 (목록을 다시 받지 않는다)
+function refreshBagMarks() {
+  for (const node of $("#grid").querySelectorAll(".card")) {
+    const it = state.items.find((x) => x.id === node.dataset.id);
+    if (it) paintPlus(node.querySelector(".plus"), it);
+  }
+}
+
+function renderCount() {
+  const n = state.total ?? 0;
+  $("#count").textContent = state.total == null ? "" : state.favOnly ? `찜한 애셋 ${n}개` : `${n}개`;
+  $("#empty").hidden = state.total == null || n > 0;
+  const more = $("#more");
+  more.textContent = state.error ? `${state.error} (누르면 다시 시도)` : state.done ? "" : "불러오는 중…";
+}
+
+// 지금 받아 둔 목록을 다시 그린다 (서명 주소를 새로 받았을 때)
+function rerenderGrid() {
+  $("#grid").replaceChildren(...state.items.map(card));
+  renderCount();
+}
+
+// 조건(묶음·검색·정렬·찜)이 바뀌면 처음부터 다시 받는다
+let favSource = null, favAll = null;
+function resetGrid() {
+  state.seq++;
+  state.items = []; state.offset = 0; state.done = false; state.total = null; state.error = "";
+  favSource = null; favAll = null;
+  $("#grid").replaceChildren();
+  renderCount();
+  loadMore();
+}
+
+let loading = null;
+async function loadMore() {
+  if (state.done || (loading && loading.seq === state.seq)) return;
+  const token = { seq: state.seq };
+  loading = token;
+  const opts = { group: state.group, q: state.q, sort: state.sort, offset: state.offset, limit: window.RidData.PAGE };
+  try {
+    let page;
+    if (state.favOnly) {
+      // 찜 목록: 찜한 애셋만 id로 받아 같은 규칙으로 거르고 정렬한다
+      favAll ??= await state.source.byIds([...state.fav]);
+      favSource ??= window.RidData.localSource(favAll.filter((it) => state.fav.has(it.id)));
+      page = await favSource.page(opts);
+    } else page = await state.source.page(opts);
+    if (token.seq !== state.seq) return; // 그사이 조건이 바뀌었다 (버릴 것은 서명하지 않는다)
+    await state.sign(page.items);
+    if (token.seq !== state.seq) return;
+    // 보는 사이 애셋이 늘어 같은 애셋이 다음 묶음에 또 오면 한 번만 그린다
+    const seen = new Set(state.items.map((it) => it.id));
+    const fresh = page.items.filter((it) => !seen.has(it.id));
+    state.items.push(...fresh);
+    state.offset += page.items.length;
+    if (page.total != null) state.total = page.total;
+    state.done = page.items.length < opts.limit || state.offset >= (state.total ?? Infinity);
+    $("#grid").append(...fresh.map(card));
+  } catch (e) {
+    if (token.seq === state.seq) { state.error = `목록을 불러오지 못했습니다: ${e.message}`; state.done = true; }
+  } finally {
+    if (loading === token) loading = null;
+    if (token.seq === state.seq) {
+      renderCount();
+      // 화면이 아직 덜 찼으면 이어서 받는다
+      if (!state.done && $("#more").getBoundingClientRect().top < innerHeight + 600) loadMore();
+    }
+  }
 }
 
 // ---------- 찜·가방 ----------
 function toggleFav(id) {
   state.fav.has(id) ? state.fav.delete(id) : state.fav.add(id);
   store.set("ridmarket.fav", [...state.fav]);
-  if (state.favOnly) renderGrid();
+  if (state.favOnly && !state.fav.has(id)) removeFromFavList(id);
+}
+
+// 찜 목록을 보는 중에 찜을 풀면 그 카드만 빼고 보던 자리는 그대로 둔다
+function removeFromFavList(id) {
+  const node = $("#grid").querySelector(`.card[data-id="${CSS.escape(id)}"]`);
+  if (node) node.remove();
+  const before = state.items.length;
+  state.items = state.items.filter((it) => it.id !== id);
+  if (state.items.length < before) { state.offset--; if (state.total != null) state.total--; }
+  if (favAll) favSource = window.RidData.localSource(favAll.filter((it) => state.fav.has(it.id)));
+  renderCount();
 }
 function toggleBag(id) {
   state.bag.has(id) ? state.bag.delete(id) : state.bag.add(id);
@@ -153,11 +223,25 @@ function filesOf(it, hires) {
   return [[it.file, `${folder}/${name}.png`], hires && [it.preview, `${folder}/${name}_확대.png`]].filter(Boolean);
 }
 
-function renderBag() {
-  const items = [...state.bag].map((id) => state.byId.get(id)).filter(Boolean);
+// 가방에 담은 애셋을 id로 받아 서명한다 (목록에 없던 것도 받을 수 있게)
+async function loadBagItems() {
+  const items = await state.source.byIds([...state.bag]);
+  await state.sign(items);
+  const byId = new Map(items.map((it) => [it.id, it]));
+  state.bagItems = [...state.bag].map((id) => byId.get(id)).filter(Boolean);
+  return state.bagItems;
+}
+
+async function renderBag(reload = true) {
+  if (reload) {
+    $("#bag-zip").disabled = true; // 다 받기 전에는 ZIP을 받지 않는다
+    $("#bag-status").textContent = "가방을 불러오는 중…";
+    try { await loadBagItems(); } catch (e) { $("#bag-status").textContent = `가방을 불러오지 못했습니다: ${e.message}`; return; }
+  }
+  const items = state.bagItems.filter((it) => state.bag.has(it.id));
   $("#bag-list").replaceChildren(...items.map((it) => {
     const rm = el("button", { type: "button", "aria-label": `${it.name} 빼기` }, "✕");
-    rm.addEventListener("click", () => { toggleBag(it.id); renderBag(); renderGrid(); });
+    rm.addEventListener("click", () => { toggleBag(it.id); renderBag(false); refreshBagMarks(); });
     return el("li", {}, el("img", { src: it.thumb ?? it.preview, alt: "", class: it.kind === "pixel" ? "pix" : "" }),
       el("span", {}, it.name, el("small", {}, groupOf(it).label)), rm);
   }));
@@ -167,7 +251,7 @@ function renderBag() {
 }
 
 async function downloadBag() {
-  const items = [...state.bag].map((id) => state.byId.get(id)).filter(Boolean);
+  const items = state.bagItems.filter((it) => state.bag.has(it.id));
   const pairs = items.flatMap((it) => filesOf(it, $("#bag-hires").checked));
   const files = [];
   for (const [i, [src, name]] of pairs.entries()) {
@@ -245,7 +329,7 @@ function openDetail(it) {
     bagBtn.textContent = on ? "✓ 가방에 담김 (누르면 빼기)" : "+ 가방에 담기";
     bagBtn.classList.toggle("on", on);
   };
-  bagBtn.onclick = () => { toggleBag(it.id); paint(); renderGrid(); };
+  bagBtn.onclick = () => { toggleBag(it.id); paint(); refreshBagMarks(); };
   paint();
   history.replaceState(null, "", `#${it.id}`);
   $("#detail").showModal();
@@ -256,27 +340,46 @@ function setQuery(q) {
   $("#q").value = q;
   state.group = "";
   renderChips();
-  renderGrid();
+  resetGrid();
 }
 
 async function main() {
-  // 로그인·승인을 통과해야 목록을 받는다 (auth.js). 관문을 보여 주는 중이면 여기서 멈춘다
-  const items = await window.ridLoadCatalog();
-  if (!items) return;
-  state.items = items;
-  state.byId = new Map(state.items.map((it) => [it.id, it]));
-  for (const id of [...state.bag]) if (!state.byId.has(id)) state.bag.delete(id);
-  renderHero();
+  // 게시 직후 캐시에 예전 auth.js가 남아 있으면 새 화면과 맞지 않는다
+  if (typeof window.ridStart !== "function") throw new Error("사이트가 막 갱신됐습니다. 잠시 후 새로고침해 주세요");
+  // 로그인·승인을 통과해야 목록 창구를 받는다 (auth.js). 관문을 보여 주는 중이면 여기서 멈춘다
+  const started = await window.ridStart();
+  if (!started) return;
+  state.source = started.source;
+  state.sign = started.sign;
+  $("#grid").after(el("p", { id: "more", class: "empty more", "aria-live": "polite" }));
+  // 이어 받다가 실패했으면 눌러서 다시 시도한다
+  $("#more").addEventListener("click", () => { if (state.error) { state.error = ""; state.done = false; loadMore(); } });
+
+  state.counts = await state.source.counts();
   renderChips();
-  renderGrid();
+  resetGrid();
+  // 아래로 내려 끝에 가까워지면 다음 묶음을 받는다 (첫 묶음을 두 번 받지 않게 resetGrid 다음에 건다)
+  new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) loadMore(); }, { rootMargin: "600px" }).observe($("#more"));
+  loadHero().then(renderHero).catch((e) => console.warn(e));
+  // 가방: 없어진 애셋은 뺀다 (물어본 id 가운데 답이 없는 것만. 그사이 새로 담은 것은 건드리지 않는다)
+  if (state.bag.size) {
+    const asked = new Set(state.bag);
+    loadBagItems().then((items) => {
+      const have = new Set(items.map((it) => it.id));
+      for (const id of asked) if (!have.has(id)) state.bag.delete(id);
+      store.set("ridmarket.bag", [...state.bag]);
+      renderBagCount();
+      refreshBagMarks();
+    }).catch((e) => console.warn(e));
+  }
   renderBagCount();
   setInterval(() => { if (!document.hidden && !$("#detail").open) { state.hero++; renderHero(); } }, 7000);
-  // 화면용 서명 주소는 30분짜리다. 20분이 지났으면 화면에 돌아올 때·그림이 깨질 때·25분마다 새로 받는다
+  // 화면용 서명 주소는 최대 40분짜리다. 20분이 지났으면 화면에 돌아올 때·그림이 깨질 때·25분마다 지금 화면에 있는 것만 새로 받는다
   let signedAt = Date.now(), refreshing = null;
   const refresh = async (force) => {
     if (refreshing || (!force && Date.now() - signedAt < 20 * 60 * 1000)) return;
-    refreshing = window.ridRefreshUrls(state.items)
-      .then(() => { signedAt = Date.now(); renderHero(); renderGrid(); })
+    refreshing = state.sign([...state.items, ...state.heroCols.flatMap((c) => c.top), ...state.bagItems])
+      .then(() => { signedAt = Date.now(); renderHero(); rerenderGrid(); if ($("#bag").open) renderBag(false); })
       .catch((e) => console.warn(e))
       .finally(() => { refreshing = null; });
   };
@@ -284,15 +387,20 @@ async function main() {
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(false); });
   document.addEventListener("error", (e) => { if (e.target.tagName === "IMG" && Date.now() - signedAt > 60 * 1000) refresh(true); }, true);
 
-  $("#q").addEventListener("input", (e) => { state.q = e.target.value.trim(); renderGrid(); });
-  $("#sort").addEventListener("change", (e) => { state.sort = e.target.value; renderGrid(); });
+  // 검색은 입력을 잠깐 멈췄을 때 서버에 묻는다
+  let typing = null;
+  $("#q").addEventListener("input", (e) => {
+    clearTimeout(typing);
+    typing = setTimeout(() => { const q = e.target.value.trim(); if (q !== state.q) { state.q = q; resetGrid(); } }, 250);
+  });
+  $("#sort").addEventListener("change", (e) => { state.sort = e.target.value; resetGrid(); });
   $("#fav-toggle").addEventListener("click", () => {
     state.favOnly = !state.favOnly;
     $("#fav-toggle").setAttribute("aria-pressed", String(state.favOnly));
-    renderGrid();
+    resetGrid();
   });
-  $("#bag-open").addEventListener("click", () => { renderBag(); $("#bag").showModal(); });
-  $("#bag-clear").addEventListener("click", () => { state.bag.clear(); store.set("ridmarket.bag", []); renderBagCount(); renderBag(); renderGrid(); });
+  $("#bag-open").addEventListener("click", () => { $("#bag").showModal(); renderBag(); });
+  $("#bag-clear").addEventListener("click", () => { state.bag.clear(); store.set("ridmarket.bag", []); renderBagCount(); renderBag(false); refreshBagMarks(); });
   $("#bag-zip").addEventListener("click", async () => {
     $("#bag-zip").disabled = true;
     try { await downloadBag(); } catch (e) { $("#bag-status").textContent = `받기 실패: ${e.message}`; }
@@ -300,10 +408,19 @@ async function main() {
   });
   for (const d of [$("#detail"), $("#bag")]) d.addEventListener("click", (e) => { if (e.target === d) d.close(); });
   $("#detail").addEventListener("close", () => history.replaceState(null, "", location.pathname + location.search));
-  const hit = state.byId.get(decodeURIComponent(location.hash.slice(1)));
-  if (hit) openDetail(hit);
+  // 주소에 #애셋id가 있으면 그 애셋을 받아 바로 연다 (실패해도 목록은 그대로 둔다)
+  try {
+    const id = decodeURIComponent(location.hash.slice(1));
+    if (id) {
+      const [hit] = await state.source.byIds([id]);
+      if (hit) { await state.sign([hit]); openDetail(hit); }
+    }
+  } catch (e) { console.warn("바로가기 주소를 열지 못했습니다", e); }
 }
 
 main().catch((e) => {
-  $("#grid").replaceChildren(el("p", { class: "empty" }, `목록을 불러오지 못했습니다: ${e.message}`));
+  // 목록 끝 표시가 있으면 거기에, 없으면(시작 전에 실패) 목록 자리에 알린다
+  const msg = `목록을 불러오지 못했습니다: ${e.message}`;
+  if ($("#more")) { state.error = msg; state.done = true; renderCount(); }
+  else $("#grid").replaceChildren(el("p", { class: "empty" }, msg));
 });

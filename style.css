@@ -236,3 +236,8 @@ body.gated .foot { display: none; }
 .member-list .who b { overflow-wrap: anywhere; }
 .member-list .ext { align-self: flex-start; margin: 2px 0 0; }
 @media (max-width: 680px) { .member-list li { flex-wrap: wrap; } .member-list .who { flex-basis: 100%; } }
+
+/* 목록 끝 표시: 다음 묶음을 받는 신호.
+   브라우저의 스크롤 고정(overflow-anchor)이 목록 아래 요소를 붙잡으면 새 카드가 붙을 때마다 화면이 바닥을 따라 내려가 끝없이 받으므로 페이지 전체에서 끈다 */
+html { overflow-anchor: none; }
+#more { min-height: 1px; }
