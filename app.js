@@ -361,6 +361,7 @@ function sizeLabel(it) {
 // 상세 창 받기 버튼: 클릭할 때 파일을 직접 받아 이름을 붙여 저장한다
 function setLink(id, path, download, text) {
   const a = $(id);
+  a.onclick = null; // 이전 애셋의 받기가 아직 진행 중이면 그 처리기가 이 버튼을 건드리지 않게 (숨긴 버튼 포함)
   a.hidden = !path;
   delete a.dataset.busy;
   delete a.dataset.direct;
@@ -371,7 +372,15 @@ function setLink(id, path, download, text) {
   a.removeAttribute("download");
   a.textContent = text;
   const handler = async (e) => {
-    if (a.dataset.direct) return; // '새 탭에서 열기'로 바뀐 뒤에는 브라우저가 링크를 그대로 연다
+    if (a.dataset.direct) {
+      // '새 탭에서 열기'로 바뀐 뒤: 주소가 아직 유효하면(받은 지 9분 안, 최소 10분 유효) 브라우저가 링크를 그대로 연다
+      if (Date.now() - Number(a.dataset.direct) < 9 * 60 * 1000) return;
+      e.preventDefault();
+      const url = await window.ridFileUrl?.(path).catch(() => null);
+      if (url && a.onclick === handler) { a.href = url; a.dataset.direct = String(Date.now()); alert("파일 주소가 오래돼 새로 받았습니다. 한 번 더 눌러 주세요."); }
+      else if (!url) alert("파일 주소를 새로 받지 못했습니다. 창을 닫았다가 다시 열어 주세요.");
+      return;
+    }
     e.preventDefault();
     if (a.dataset.busy) return;
     a.dataset.busy = "1";
@@ -385,7 +394,7 @@ function setLink(id, path, download, text) {
       // 바로 받지 못하면 버튼을 서명 주소 링크로 바꾼다. 한 번 더 누르면 새 탭에 파일이 열린다 (fetch를 거치지 않음)
       const url = await window.ridFileUrl?.(path).catch(() => null);
       if (url && a.onclick === handler) {
-        a.href = url; a.target = "_blank"; a.rel = "noopener"; a.dataset.direct = "1";
+        a.href = url; a.target = "_blank"; a.rel = "noopener"; a.dataset.direct = String(Date.now());
         delete a.dataset.busy;
         a.textContent = `${text} · 새 탭에서 열기`;
         alert(`바로 받지 못했습니다 (${err.message}).\n버튼이 '새 탭에서 열기'로 바뀌었습니다. 한 번 더 누르면 새 탭에 파일이 열리고, 오른쪽 클릭 → 다른 이름으로 저장으로 받을 수 있습니다.`);

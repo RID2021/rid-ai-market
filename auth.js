@@ -1,4 +1,7 @@
 // 로그인·승인 확인·회원 관리 (Supabase)
+// 로그인 (2026-10-21부터 메일을 보내지 않는다. 기본 메일은 사이트 전체 1시간 2통이라 막혔다):
+//   직원 = 회사 Microsoft 계정(azure), 누구나 = Google, 고객사 = 초대 링크로 만든 아이디(<아이디>@guest.ri-d.com)·비밀번호
+//   승인 규칙은 supabase/schema.sql (회사 계정 자동 승인, 초대 링크로 승인, 비밀번호 세션은 아이디 계정만)
 // 그림 파일: config.js의 storage가 "ncp"면 NCP Object Storage 비공개 버킷(서명 주소는 Supabase 함수 sign_asset_urls가 만든다),
 //            아니면 Supabase Storage 비공개 버킷
 // config.js가 비어 있으면 로컬 개발(localhost)에서만 catalog.json을 그대로 쓴다
@@ -7,6 +10,27 @@
   const $ = (s) => document.querySelector(s);
   const isLocal = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
   const isCompany = (email) => /@ri-d\.com$/i.test(email || "");
+  const GUEST = "guest.ri-d.com";
+  const ID_RE = /^[a-z0-9][a-z0-9._-]{2,29}$/;
+  const isGuest = (email) => new RegExp(`^[a-z0-9][a-z0-9._-]{2,29}@${GUEST.replace(/\./g, "\\.")}$`).test(email || "");
+  // 화면에 보이는 계정 이름: 아이디 계정은 아이디만
+  const shown = (email) => (isGuest(email) ? `${email.split("@")[0]} (아이디)` : email || "");
+
+  // 초대 링크(?invite=…)로 들어오면 코드를 기억하고 주소창에서 지운다 (Google·Microsoft에 다녀와도 남게)
+  const INVITE_KEY = "rid.invite";
+  const invite = {
+    get() { for (const st of [localStorage, sessionStorage]) { try { const v = st.getItem(INVITE_KEY); if (v) return v; } catch { /* 저장소를 못 쓰는 브라우저 */ } } return ""; },
+    set(v) { for (const st of [localStorage, sessionStorage]) { try { v ? st.setItem(INVITE_KEY, v) : st.removeItem(INVITE_KEY); } catch { /* 무시 */ } } },
+  };
+  (() => {
+    const u = new URL(location.href);
+    const code = u.searchParams.get("invite");
+    if (code == null) return;
+    if (/^[A-Za-z0-9_-]{16,64}$/.test(code)) invite.set(code);
+    u.searchParams.delete("invite");
+    history.replaceState(history.state, "", u.pathname + u.search + u.hash);
+  })();
+  let inviteError = "";
   const FIELDS = ["file", "gif", "preview", "thumb", "spec", "midi"];
   const TTL = 30 * 60; // 화면에 쓰는 서명 주소 유효시간(초). 받기는 매번 로그인 확인 후 짧은 주소로 받는다
   const useNcp = cfg.storage === "ncp";
@@ -41,27 +65,62 @@
       const { error } = await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: here } });
       if (error) status(`로그인 실패: ${error.message}`);
     };
-    $("#otp-form").onsubmit = async (e) => {
-      e.preventDefault();
-      const email = $("#otp-email").value.trim();
-      status("로그인 메일을 보내는 중…");
-      const { error } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true, emailRedirectTo: here } });
-      if (error) return status(`보내지 못했습니다: ${error.message}`);
-      $("#otp-form").hidden = true;
-      $("#otp-verify").hidden = false;
-      $("#otp-code").focus();
-      status(`${email}로 로그인 메일을 보냈습니다. 메일 안의 링크를 누르면 바로 들어옵니다. 메일에 숫자 코드가 있으면 아래 칸에 넣어도 됩니다. (스팸함도 확인하세요)`);
+    $("#login-microsoft").onclick = async () => {
+      status("회사 계정(Microsoft)으로 이동합니다…");
+      const { error } = await sb.auth.signInWithOAuth({ provider: "azure", options: { scopes: "email", redirectTo: here } });
+      if (error) status(`로그인 실패: ${error.message}`);
     };
-    $("#otp-verify").onsubmit = async (e) => {
+    $("#id-login").onsubmit = async (e) => {
       e.preventDefault();
-      status("확인 중…");
-      const { error } = await sb.auth.verifyOtp({ email: $("#otp-email").value.trim(), token: $("#otp-code").value.trim(), type: "email" });
-      if (error) return status(`코드가 맞지 않습니다: ${error.message}`);
+      const id = $("#id-name").value.trim().toLowerCase();
+      if (!ID_RE.test(id)) return status("아이디는 영문 소문자·숫자 3~30자입니다 (. _ - 사용 가능).");
+      status("로그인 중…");
+      const { error } = await sb.auth.signInWithPassword({ email: `${id}@${GUEST}`, password: $("#id-pass").value });
+      if (error) return status(/invalid login|credentials/i.test(error.message) ? "아이디나 비밀번호가 맞지 않습니다." : `로그인 실패: ${error.message}`);
+      location.replace(here);
+    };
+    $("#id-signup-open").onclick = () => {
+      $("#id-signup-open").hidden = true;
+      $("#id-login").hidden = true; // 가입 칸만 보이게
+      $("#id-signup").hidden = false;
+      $("#su-name").focus();
+    };
+    $("#id-signup").onsubmit = async (e) => {
+      e.preventDefault();
+      const id = $("#su-name").value.trim().toLowerCase(), pw = $("#su-pass").value;
+      if (!invite.get()) return status("초대 링크로 들어와야 아이디를 만들 수 있습니다. 관리자에게 링크를 받아 주세요.");
+      if (!ID_RE.test(id)) return status("아이디는 영문 소문자·숫자 3~30자입니다 (. _ - 사용 가능).");
+      if (pw.length < 8) return status("비밀번호는 8자 이상이어야 합니다.");
+      if (pw !== $("#su-pass2").value) return status("비밀번호 확인이 서로 다릅니다.");
+      status("아이디를 만드는 중…");
+      const { data, error } = await sb.auth.signUp({ email: `${id}@${GUEST}`, password: pw, options: { data: { name: $("#su-display").value.trim().slice(0, 60) } } });
+      if (error) return status(/already|registered|exists/i.test(error.message) ? "이미 있는 아이디입니다. 다른 아이디를 써 주세요." : `아이디를 만들지 못했습니다: ${error.message}`);
+      if (!data.session) return status("아이디는 만들었지만 바로 로그인되지 않았습니다. 사이트 설정(가입 확인 메일 끄기)이 아직 안 된 것 같습니다. 관리자에게 알려 주세요.");
       location.replace(here);
     };
     const logout = async () => { await sb.auth.signOut(); location.replace(here); };
     $("#gate-logout").onclick = logout;
     $("#logout").onclick = logout;
+  }
+
+  // 로그인 화면의 초대 링크 안내. 쓸 수 없는 링크면 기억한 코드를 지운다
+  async function showInvite() {
+    const code = invite.get(), note = $("#invite-note");
+    $("#id-signup-open").hidden = !code;
+    note.hidden = !code;
+    if (!code) return;
+    const { data, error } = await sb.rpc("invite_info", { p_code: code });
+    const row = data?.[0];
+    note.className = "invite-note";
+    if (error) { note.textContent = "초대 링크를 확인하지 못했습니다. 잠시 후 새로고침해 주세요."; return; }
+    if (!row || !row.valid) {
+      invite.set("");
+      $("#id-signup-open").hidden = true;
+      note.className = "invite-note bad";
+      note.textContent = "초대 링크가 만료됐거나 더 쓸 수 없습니다. 관리자에게 새 링크를 받아 주세요.";
+      return;
+    }
+    note.textContent = `‘${row.label}’ 초대 링크로 들어오셨습니다. Google 또는 아이디로 가입하면 바로 이용할 수 있습니다.`;
   }
 
   // 경로 목록 → 서명 주소 Map. 요청할 때마다 서버가 로그인·승인을 다시 확인한다
@@ -138,8 +197,20 @@
     $("#user-avatar").hidden = !avatar;
     if (avatar) $("#user-avatar").src = avatar;
     $("#user-initial").textContent = avatar ? "" : (profile.email || "?").slice(0, 1).toUpperCase();
-    $("#me-email").textContent = profile.email;
+    $("#me-email").textContent = shown(profile.email);
     btn.onclick = () => $("#me").showModal();
+    // 아이디 계정만 비밀번호를 바꿀 수 있다 (Microsoft·Google 계정은 비밀번호가 없다)
+    const form = $("#pw-form");
+    form.hidden = !isGuest(profile.email);
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const pw = $("#pw-new").value;
+      if (pw.length < 8) return ($("#pw-status").textContent = "비밀번호는 8자 이상이어야 합니다.");
+      if (pw !== $("#pw-new2").value) return ($("#pw-status").textContent = "비밀번호 확인이 서로 다릅니다.");
+      const { error } = await sb.auth.updateUser({ password: pw });
+      $("#pw-status").textContent = error ? `바꾸지 못했습니다: ${error.message}` : "비밀번호를 바꿨습니다.";
+      if (!error) form.reset();
+    };
   }
 
   // ---------- 회원 관리 (승인된 @ri-d.com 사용자) ----------
@@ -148,7 +219,7 @@
   let members = [];
 
   async function loadMembers() {
-    const { data, error } = await sb.from("profiles").select("id,email,name,status,auto_approved,decided_by,decided_at,created_at").order("created_at", { ascending: false });
+    const { data, error } = await sb.from("profiles").select("id,email,name,status,auto_approved,decided_by,decided_at,created_at,company").order("created_at", { ascending: false });
     if (error) throw error;
     members = data;
     const pending = members.filter((m) => m.status === "pending").length;
@@ -161,12 +232,12 @@
     const who = document.createElement("div");
     who.className = "who";
     const mail = document.createElement("b");
-    mail.textContent = m.email; // 실제 메일을 앞세운다 (이름은 본인이 정한 값이라 보조로만)
+    mail.textContent = shown(m.email); // 실제 메일(아이디)을 앞세운다 (이름은 본인이 정한 값이라 보조로만)
     who.append(mail);
     if (!isCompany(m.email)) {
       const ext = document.createElement("span");
-      ext.className = "ext";
-      ext.textContent = "외부 메일";
+      ext.className = isGuest(m.email) ? "tagline" : "ext";
+      ext.textContent = isGuest(m.email) ? "고객사 아이디" : "외부 메일";
       mail.after(ext);
     }
     const sub = document.createElement("small");
@@ -174,7 +245,8 @@
     sub.textContent = [
       m.name ? `본인 입력 이름: ${m.name}` : null,
       `${new Date(m.created_at).toLocaleDateString("ko-KR")} 가입`,
-      m.auto_approved ? "회사 메일 자동 승인" : decider ? `${LABEL[m.status]} · ${decider}` : null,
+      m.company ? `초대 링크: ${m.company}` : null,
+      m.auto_approved ? "회사 계정 자동 승인" : decider ? `${LABEL[m.status]} · ${shown(decider)}` : null,
     ].filter(Boolean).join(" · ");
     who.append(sub);
     const tag = document.createElement("span");
@@ -196,8 +268,83 @@
         };
         li.append(b);
       }
+      // 아이디 계정: 비밀번호를 잊었을 때 임시 비밀번호를 정해 준다 (메일로 재설정하지 않는다)
+      if (isGuest(m.email)) {
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "btn"; b.textContent = "임시 비밀번호";
+        b.onclick = async () => {
+          if (!confirm(`${shown(m.email)} 계정의 비밀번호를 새 임시 비밀번호로 바꿀까요? 지금 로그인된 곳은 모두 로그아웃됩니다.`)) return;
+          const pw = tempPassword();
+          b.disabled = true;
+          const { error } = await sb.rpc("admin_set_password", { member: m.id, new_password: pw });
+          b.disabled = false;
+          if (error) return alert(`바꾸지 못했습니다: ${error.message}`);
+          prompt("임시 비밀번호입니다. 고객에게 전달하고, 로그인 후 '내 계정'에서 바꾸게 해 주세요.", pw);
+        };
+        li.append(b);
+      }
     }
     return li;
+  }
+  // 헷갈리는 글자(0 o 1 l i)를 뺀 10자
+  function tempPassword() {
+    const abc = "abcdefghjkmnpqrstuvwxyz23456789";
+    return Array.from(crypto.getRandomValues(new Uint32Array(10)), (n) => abc[n % abc.length]).join("");
+  }
+
+  // ---------- 초대 링크 (관리자) ----------
+  let invites = [];
+  const inviteLink = (code) => `${location.origin}${location.pathname}?invite=${code}`;
+  async function loadInvites() {
+    const { data, error } = await sb.from("invites").select("id,code,label,created_at,expires_at,max_uses,uses,revoked").order("created_at", { ascending: false });
+    if (error) throw error;
+    invites = data;
+  }
+  async function copyLink(code, btn) {
+    const link = inviteLink(code);
+    try { await navigator.clipboard.writeText(link); btn.textContent = "복사됨"; setTimeout(() => (btn.textContent = "링크 복사"), 1500); }
+    catch { prompt("아래 링크를 복사하세요", link); }
+  }
+  function inviteRow(inv) {
+    const li = document.createElement("li");
+    const who = document.createElement("div");
+    who.className = "who";
+    const name = document.createElement("b");
+    name.textContent = inv.label;
+    const sub = document.createElement("small");
+    const until = new Date(inv.expires_at);
+    sub.textContent = `${inv.uses}/${inv.max_uses}명 사용 · ${until.toLocaleDateString("ko-KR")}까지 · ${new Date(inv.created_at).toLocaleDateString("ko-KR")} 만듦`;
+    who.append(name, sub);
+    const active = !inv.revoked && until > new Date() && inv.uses < inv.max_uses;
+    const tag = document.createElement("span");
+    tag.className = `state ${active ? "approved" : "rejected"}`;
+    tag.textContent = active ? "사용 중" : inv.revoked ? "중지" : inv.uses >= inv.max_uses ? "다 씀" : "만료";
+    li.append(who, tag);
+    if (active) {
+      const copy = document.createElement("button");
+      copy.type = "button"; copy.className = "btn dark"; copy.textContent = "링크 복사";
+      copy.onclick = () => copyLink(inv.code, copy);
+      const stop = document.createElement("button");
+      stop.type = "button"; stop.className = "btn"; stop.textContent = "사용 중지";
+      stop.onclick = async () => {
+        if (!confirm(`‘${inv.label}’ 초대 링크를 더 쓰지 못하게 할까요? (이미 가입한 사람은 그대로입니다)`)) return;
+        const { error } = await sb.rpc("revoke_invite", { p_id: inv.id });
+        if (error) return alert(`중지하지 못했습니다: ${error.message}`);
+        await loadInvites(); renderInvites();
+      };
+      li.append(copy, stop);
+    }
+    return li;
+  }
+  function renderInvites() {
+    $("#invite-empty").hidden = invites.length > 0;
+    $("#invite-list").replaceChildren(...invites.map(inviteRow));
+  }
+  function showPane(name) {
+    $("#admin-members").hidden = name !== "members";
+    $("#admin-invites").hidden = name !== "invites";
+    $("#pane-members").setAttribute("aria-selected", String(name === "members"));
+    $("#pane-invites").setAttribute("aria-selected", String(name === "invites"));
   }
 
   function renderMembers() {
@@ -221,7 +368,24 @@
     await loadMembers();
     $("#admin-open").onclick = async () => {
       try { await loadMembers(); } catch (e) { alert(`회원 목록을 받지 못했습니다: ${e.message}`); return; }
-      renderMembers(); $("#admin").showModal();
+      renderMembers(); showPane("members"); $("#admin").showModal();
+    };
+    $("#pane-members").onclick = () => showPane("members");
+    $("#pane-invites").onclick = async () => {
+      showPane("invites");
+      try { await loadInvites(); renderInvites(); } catch (e) { $("#invite-empty").hidden = false; $("#invite-empty").textContent = `초대 링크를 받지 못했습니다: ${e.message}`; }
+    };
+    $("#invite-form").onsubmit = async (e) => {
+      e.preventDefault();
+      const btn = e.submitter ?? $("#invite-form button");
+      btn.disabled = true;
+      const { data: code, error } = await sb.rpc("create_invite", { p_label: $("#inv-label").value.trim(), p_days: Number($("#inv-days").value), p_max_uses: Number($("#inv-uses").value) });
+      btn.disabled = false;
+      if (error) return alert(`만들지 못했습니다: ${error.message}`);
+      $("#inv-label").value = "";
+      await loadInvites(); renderInvites();
+      const first = $("#invite-list .btn.dark");
+      if (first) await copyLink(code, first);
     };
   }
 
@@ -275,22 +439,38 @@
     sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
     wireGate();
     const { data: { session } } = await sb.auth.getSession();
-    if (!session) { showGate("login"); return null; }
+    if (!session) { showGate("login"); showInvite().catch((e) => console.warn(e)); return null; }
     me = session.user;
+    // 가입 정보 확인·보충 (회사 계정 자동 승인 포함). 서버 함수가 아직 없으면(설정 전) 건너뛴다
+    const ens = await sb.rpc("ensure_my_profile");
+    if (ens.error && /인정하지 않는 로그인/.test(ens.error.message)) {
+      showGate("error", "이 로그인 방식은 쓸 수 없습니다. 회사 계정·Google·아이디로 다시 로그인해 주세요.");
+      $("#gate-logout").hidden = false;
+      return null;
+    }
+    if (ens.error) console.warn("ensure_my_profile", ens.error.message);
+    // 초대 링크로 들어왔으면 승인받기 (한 번 쓰면 기억한 코드를 지운다)
+    const code = invite.get();
+    if (code && ens.data && ens.data !== "approved") {
+      const { error } = await sb.rpc("redeem_invite", { p_code: code });
+      if (error) inviteError = error.message;
+      invite.set("");
+    } else if (code && ens.data === "approved") invite.set("");
     const { data: profile, error: pErr } = await sb.from("profiles").select("id,email,status").eq("id", me.id).maybeSingle();
     if (pErr) { showGate("error", `회원 정보를 확인하지 못했습니다: ${pErr.message}`); $("#gate-logout").hidden = false; return null; }
     if (!profile) {
-      showGate("error", "메일 확인이 끝나지 않았거나 가입 정보가 없습니다. 다시 로그인하거나 관리자에게 문의하세요.");
+      showGate("error", "가입 정보가 없습니다. 회사 계정·Google·아이디로 다시 로그인하거나 관리자에게 문의하세요.");
       $("#gate-logout").hidden = false;
       return null;
     }
     if (profile.status !== "approved") {
-      $("#wait-email").textContent = profile.email;
+      $("#wait-email").textContent = shown(profile.email);
       if (profile.status === "rejected") {
         showGate("error", "이 계정은 이용 승인이 거절됐습니다. 관리자에게 문의하세요.");
         $("#gate-logout").hidden = false;
       } else {
         showGate("wait", "가입 신청이 접수됐습니다.");
+        if (inviteError) status(`초대 링크를 쓰지 못했습니다: ${inviteError}`);
       }
       return null;
     }

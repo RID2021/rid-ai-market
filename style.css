@@ -255,3 +255,27 @@ body.gated .foot { display: none; }
    브라우저의 스크롤 고정(overflow-anchor)이 목록 아래 요소를 붙잡으면 새 카드가 붙을 때마다 화면이 바닥을 따라 내려가 끝없이 받으므로 페이지 전체에서 끈다 */
 html { overflow-anchor: none; }
 #more { min-height: 1px; }
+
+/* 로그인 (2026-10-21: 메일 없이 — 회사 Microsoft 계정·Google·아이디) */
+.btn.ms { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.btn.ms svg { width: 18px; height: 18px; }
+.gate .hint { margin: 6px 0 12px; font-size: 13px; color: var(--muted); }
+.gate .btn.wide + .btn.wide { margin-top: 0; }
+.idform { display: grid; gap: 8px; }
+.idform input { min-width: 0; border: 1px solid var(--line); border-radius: 12px; padding: 11px 14px; font-size: 15px; }
+.linkbtn { border: 0; background: none; color: var(--ink); text-decoration: underline; font-size: 14px; font-weight: 700; margin-top: 12px; cursor: pointer; }
+.idform + .linkbtn { display: inline-block; }
+#id-signup { margin-top: 12px; }
+.invite-note { background: #eef6ff; color: #1d4f91; border-radius: 12px; padding: 10px 12px; font-size: 14px; margin: 0 0 14px; text-align: left; }
+.invite-note.bad { background: #fff0f0; color: #b3263e; }
+#me .idform { margin: 12px 0; }
+/* 관리자: 회원 / 초대 링크 */
+.admin-switch { display: inline-flex; background: var(--soft); border-radius: 999px; padding: 4px; margin: 4px 0 6px; }
+.admin-switch .seg { border: 0; background: none; border-radius: 999px; padding: 7px 16px; font-weight: 700; font-size: 14px; cursor: pointer; color: var(--muted); }
+.admin-switch .seg[aria-selected="true"] { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.invite-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0 12px; }
+.invite-form input, .invite-form select { border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; font-size: 14px; }
+.invite-form #inv-label { flex: 1 1 200px; min-width: 0; }
+.invite-form #inv-uses { width: 80px; }
+.invite-form label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.member-list .tagline { margin-left: 6px; font-size: 11px; font-weight: 700; color: #1d4f91; background: #eef6ff; border-radius: 999px; padding: 2px 8px; align-self: flex-start; }
