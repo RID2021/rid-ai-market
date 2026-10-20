@@ -90,11 +90,17 @@
         if (error) throw fail("배너", error);
         return data.map((r) => r.data);
       },
-      // 세부 분류 칩과 개수: [{ facet: "장르:국악", count }] (동기화가 계산해 둔 특별한 행 하나를 읽는다)
+      // 세부 분류 칩과 개수: [{ facet: "장르:국악", count }] (동기화가 계산해 둔 특별한 행에서 facets만 읽는다)
       async facets(group) {
-        const { data, error } = await sb.from("assets").select("data").eq("id", META_ID).maybeSingle();
+        const { data, error } = await sb.from("assets").select("facets:data->facets").eq("id", META_ID).maybeSingle();
         if (error) throw fail("세부 분류", error);
-        return data?.data?.facets?.[group] ?? [];
+        return data?.facets?.[group] ?? [];
+      },
+      // 추천 검색어 목록 [[낱말, 애셋 수, 묶음]] (같은 특별한 행의 suggest. 검색창을 처음 누를 때 한 번 받는다)
+      async suggestions() {
+        const { data, error } = await sb.from("assets").select("suggest:data->suggest").eq("id", META_ID).maybeSingle();
+        if (error) throw fail("추천 검색어", error);
+        return data?.suggest ?? [];
       },
       // 찜·가방·바로가기 주소: id로 받는다 (주소가 너무 길어지지 않게 100개씩)
       async byIds(ids) {
@@ -143,6 +149,7 @@
       },
       async byIds(ids) { return ids.map((id) => byId.get(id)).filter(Boolean); },
       async facets(group) { return facetCounts(all)[group] ?? []; },
+      async suggestions() { return suggestTerms(all); },
     };
   }
 
@@ -159,5 +166,60 @@
     return out;
   }
 
-  root.RidData = { PAGE, GROUP_WHERE, GROUP_LABEL, FACET_ORDER, META_ID, words, serverSource, localSource, localMatch, localCompare, facetCounts };
+  // ---------- 추천 검색어 (사용자 요청 2026-10-21) ----------
+  // 목록: 태그·세부 분류 값·분류·이름(안내 글자는 문구)을 모아 [낱말, 들어 있는 애셋 수, 가장 많이 들어 있는 묶음]으로.
+  //   동기화(scripts/supabase-sync.mjs)가 이 함수로 서버의 메타 행에 넣고, 로컬은 같은 함수로 계산한다
+  const groupKeyOf = (it) => Object.keys(GROUP_WHERE).find((g) => it[GROUP_WHERE[g][0]] === GROUP_WHERE[g][1]) || "";
+  function suggestTerms(items, limit = 8000) {
+    const map = new Map();
+    for (const it of items) {
+      if (it.kind === "_meta") continue;
+      const g = groupKeyOf(it), terms = new Set();
+      for (const t of it.tags ?? []) terms.add(String(t).trim());
+      for (const f of it.facets ?? []) terms.add(f.slice(f.indexOf(":") + 1).trim());
+      for (const c of String(it.category ?? "").split("·")) terms.add(c.trim());
+      terms.add(String((it.kind === "sign" ? it.text : it.name) ?? "").trim());
+      for (const t of terms) {
+        if (t.length < 2 || t.length > 40 || /없음/.test(t) || /^[\d\s.~-]+$/.test(t)) continue;
+        const e = map.get(t) ?? { n: 0, g: {} };
+        e.n++; e.g[g] = (e.g[g] || 0) + 1;
+        map.set(t, e);
+      }
+    }
+    return [...map]
+      .map(([t, e]) => [t, e.n, Object.entries(e.g).sort((a, b) => b[1] - a[1] || cmp(a[0], b[0]))[0][0]])
+      .sort((a, b) => b[1] - a[1] || cmp(a[0], b[0]))
+      .slice(0, limit);
+  }
+
+  // 입력한 글자에 맞는 추천 검색어 n개. 앞부분이 같은 것 먼저, 그다음 중간에 들어 있는 것, 같으면 애셋이 많은 것·짧은 것
+  //   한글 입력 중간 상태도 맞춘다: '민'(미+ㄴ 받침)은 '미니맵'처럼 '미' 다음 글자가 ㄴ으로 시작하는 낱말에,
+  //   초성만 친 'ㅁㄴㅁ'은 '미니맵'에 맞는다
+  const CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
+  const JONG = ["", "ㄱ", "ㄲ", "ㄳ", "ㄴ", "ㄵ", "ㄶ", "ㄷ", "ㄹ", "ㄺ", "ㄻ", "ㄼ", "ㄽ", "ㄾ", "ㄿ", "ㅀ", "ㅁ", "ㅂ", "ㅄ", "ㅅ", "ㅆ", "ㅇ", "ㅈ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ"];
+  const syl = (c) => { const k = c.charCodeAt(0) - 0xac00; return k >= 0 && k < 11172 ? k : -1; };
+  const choOf = (c) => { const k = syl(c); return k < 0 ? c : CHO[Math.floor(k / 588)]; };
+  const choseong = (s) => [...s].map(choOf).join("");
+  const normTerm = (s) => String(s ?? "").normalize("NFC").toLowerCase().replace(/\s+/g, "");
+  function suggestMatch(list, q, n = 8) {
+    const w = normTerm(q);
+    if (!w) return [];
+    const onlyCho = /^[ㄱ-ㅎ]+$/.test(w);
+    // 마지막 글자의 받침을 다음 글자 초성으로 옮겨 본다 ('민' → '미' + ㄴ)
+    const last = w.slice(-1), k = syl(last), jong = k >= 0 ? JONG[k % 28] : "";
+    const alt = jong && CHO.includes(jong) ? [w.slice(0, -1) + String.fromCharCode(0xac00 + k - (k % 28)), jong] : null;
+    const scored = [];
+    for (const row of list) {
+      const t = normTerm(row[0]);
+      let s = -1;
+      if (onlyCho) { const c = choseong(t); s = c.startsWith(w) ? 2 : c.includes(w) ? 1 : -1; }
+      else if (t.startsWith(w)) s = 3;
+      else if (alt && t.startsWith(alt[0]) && t.length > alt[0].length && choOf(t[alt[0].length]) === alt[1]) s = 3;
+      else if (t.includes(w)) s = 1;
+      if (s >= 0) scored.push([s, row]);
+    }
+    return scored.sort((a, b) => b[0] - a[0] || b[1][1] - a[1][1] || a[1][0].length - b[1][0].length || cmp(a[1][0], b[1][0])).slice(0, n).map((x) => x[1]);
+  }
+
+  root.RidData = { PAGE, GROUP_WHERE, GROUP_LABEL, FACET_ORDER, META_ID, words, serverSource, localSource, localMatch, localCompare, facetCounts, suggestTerms, suggestMatch, choseong };
 })(typeof window !== "undefined" ? window : globalThis);

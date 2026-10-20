@@ -468,6 +468,93 @@ function openDetail(it) {
   $("#detail").showModal();
 }
 
+// ---------- 검색·추천 검색어 (추천 검색어: 사용자 요청 2026-10-21) ----------
+// 검색은 입력을 잠깐 멈췄을 때 서버에 묻는다. 검색창을 누르면 최근 검색어·추천 검색어를, 글자를 치면 맞는 이름·태그를 아래에 보여 준다.
+// 추천 목록은 동기화가 서버의 메타 행에 만들어 둔 것을 처음 한 번만 받는다 (글자마다 서버에 묻지 않는다)
+const POPULAR = ["조선", "고려", "신라", "유물", "무기", "십장생", "바다 동물", "곤충", "포털", "미니맵", "포토존", "입구", "획득", "마법", "국악", "신나는", "잔잔한", "전투"];
+const RECENT_KEY = "ridmarket.recent";
+function setupSearch() {
+  const q = $("#q"), box = $("#suggest");
+  let list = null, loading = null, active = -1, rows = [], typing = null;
+  const load = () => (list ? Promise.resolve(list)
+    : (loading ??= state.source.suggestions()
+      .then((l) => (list = Array.isArray(l) ? l : []))
+      .catch((e) => { console.warn("추천 검색어를 받지 못했습니다", e); loading = null; return []; })));
+  const groupLabel = (g) => GROUPS.find((x) => x.key === g)?.label ?? "";
+  const remember = (text) => {
+    const t = String(text).trim();
+    if (t) store.set(RECENT_KEY, [t, ...store.get(RECENT_KEY).filter((x) => x !== t)].slice(0, 6));
+  };
+  const runNow = () => { clearTimeout(typing); const v = q.value.trim(); if (v !== state.q) { state.q = v; resetGrid(); } };
+  const close = () => { box.hidden = true; q.setAttribute("aria-expanded", "false"); q.removeAttribute("aria-activedescendant"); active = -1; rows = []; };
+  const choose = (term) => { remember(term); close(); clearTimeout(typing); setQuery(term); q.blur(); };
+  const keep = (e) => e.preventDefault(); // 누르는 동안 검색창 포커스를 지켜 목록이 먼저 닫히지 않게
+  // 맞은 부분을 굵게 (글자는 textContent로만 넣는다)
+  const mark = (term, w) => {
+    const i = w ? term.toLowerCase().indexOf(w.toLowerCase()) : -1;
+    if (i < 0) return [term];
+    return [term.slice(0, i), el("b", {}, term.slice(i, i + w.length)), term.slice(i + w.length)];
+  };
+  const option = (i, term, sub, w) => el("div", { id: `sg-${i}`, class: "sg-opt", role: "option", "aria-selected": "false", onmousedown: keep, onclick: () => choose(term) },
+    el("span", { class: "sg-term" }, ...mark(term, w)), sub ? el("span", { class: "sg-sub" }, sub) : null);
+  const paintActive = () => {
+    box.querySelectorAll('[role="option"]').forEach((o, i) => o.setAttribute("aria-selected", String(i === active)));
+    if (active >= 0) { q.setAttribute("aria-activedescendant", `sg-${active}`); $(`#sg-${active}`)?.scrollIntoView({ block: "nearest" }); }
+    else q.removeAttribute("aria-activedescendant");
+  };
+  let seq = 0;
+  async function render() {
+    const my = ++seq, v = q.value.trim();
+    const l = await load();
+    if (my !== seq || document.activeElement !== q) return; // 그사이 더 입력했거나 검색창을 떠났다
+    active = -1;
+    if (!v) {
+      const recent = store.get(RECENT_KEY);
+      const have = new Set(l.map((r) => r[0]));
+      const popular = POPULAR.filter((t) => have.has(t)).slice(0, 12);
+      rows = [...recent];
+      box.replaceChildren(
+        ...(recent.length ? [el("p", { class: "sg-head" }, "최근 검색",
+          el("button", { type: "button", class: "sg-clear", onmousedown: keep, onclick: () => { store.set(RECENT_KEY, []); render(); } }, "지우기")),
+          ...recent.map((t, i) => option(i, t, "", ""))] : []),
+        ...(popular.length ? [el("p", { class: "sg-head" }, "추천 검색어"),
+          el("div", { class: "sg-chips" }, ...popular.map((t) => el("button", { type: "button", class: "chip", onmousedown: keep, onclick: () => choose(t) }, t)))] : []),
+      );
+    } else {
+      const found = window.RidData.suggestMatch(l, v, 8);
+      rows = found.map((r) => r[0]);
+      box.replaceChildren(...found.map((r, i) => option(i, r[0], [groupLabel(r[2]), `${r[1].toLocaleString("ko-KR")}개`].filter(Boolean).join(" · "), v)));
+    }
+    const show = box.childElementCount > 0;
+    box.hidden = !show;
+    q.setAttribute("aria-expanded", String(show));
+  }
+  q.setAttribute("role", "combobox");
+  q.setAttribute("aria-autocomplete", "list");
+  q.setAttribute("aria-controls", "suggest");
+  q.setAttribute("aria-expanded", "false");
+  q.addEventListener("focus", () => { render(); });
+  q.addEventListener("input", () => { clearTimeout(typing); typing = setTimeout(runNow, 250); render(); });
+  q.addEventListener("keydown", (e) => {
+    if (e.isComposing || e.keyCode === 229) return; // 한글을 조합하는 중의 Enter·화살표는 조합을 끝내는 데 쓴다
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      if (box.hidden || !rows.length) return;
+      e.preventDefault();
+      active = e.key === "ArrowDown" ? (active + 1) % rows.length : active <= 0 ? rows.length - 1 : active - 1;
+      paintActive();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (active >= 0 && rows[active]) choose(rows[active]);
+      else if (/^[ㄱ-ㅎ\s]+$/.test(q.value.trim()) && rows[0]) choose(rows[0]); // 초성만 쳤으면 첫 추천어로 (목록 검색은 초성을 모른다)
+      else { remember(q.value); close(); runNow(); }
+    } else if (e.key === "Escape" && !box.hidden) {
+      e.preventDefault();
+      close();
+    }
+  });
+  q.addEventListener("blur", () => setTimeout(() => { if (document.activeElement !== q) close(); }, 150));
+}
+
 function setQuery(q) {
   state.q = q;
   $("#q").value = q;
@@ -514,18 +601,14 @@ async function main() {
       .catch((e) => console.warn(e))
       .finally(() => { refreshing = null; });
   };
-  setInterval(() => refresh(true), 25 * 60 * 1000);
+  // 숨겨진 탭에서는 받지 않는다 (돌아오면 visibilitychange가 받는다. 밤새 열어 둔 탭이 25분마다 서명 요청·Supabase 로그를 쌓았다, 2026-10-21)
+  setInterval(() => { if (!document.hidden) refresh(true); }, 25 * 60 * 1000);
   window.ridRefreshSoon = () => { if (Date.now() - signedAt > 60 * 1000) refresh(true); };
   $("#d-audio").addEventListener("error", retryDetailAudio);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(false); });
   document.addEventListener("error", (e) => { if (e.target.tagName === "IMG" && Date.now() - signedAt > 60 * 1000) refresh(true); }, true);
 
-  // 검색은 입력을 잠깐 멈췄을 때 서버에 묻는다
-  let typing = null;
-  $("#q").addEventListener("input", (e) => {
-    clearTimeout(typing);
-    typing = setTimeout(() => { const q = e.target.value.trim(); if (q !== state.q) { state.q = q; resetGrid(); } }, 250);
-  });
+  setupSearch();
   $("#sort").addEventListener("change", (e) => { state.sort = e.target.value; resetGrid(); });
   $("#fav-toggle").addEventListener("click", () => {
     state.favOnly = !state.favOnly;
