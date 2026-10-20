@@ -28,7 +28,7 @@ const state = {
   source: null, sign: async (items) => items, // auth.js의 ridStart가 채운다
   items: [], total: null, offset: 0, done: false, seq: 0, // 지금 목록에 받아 둔 애셋 (조건이 바뀌면 처음부터)
   counts: {}, heroCols: [], bagItems: [],
-  group: "", q: "", sort: "new", favOnly: false, hero: 0,
+  group: "", q: "", sort: "new", favOnly: false, hero: 0, facets: [], // facets: 고른 세부 분류 ("갈래:이름")
   fav: new Set(store.get("ridmarket.fav")), bag: new Set(store.get("ridmarket.bag")),
 };
 
@@ -75,8 +75,7 @@ function renderHero() {
     el("button", { type: "button", role: "tab", "aria-selected": String(i === state.hero % cols.length), "aria-label": col.g.hero.title,
       onclick: () => { state.hero = i; renderHero(); } })));
   $("#hero-go").onclick = () => {
-    state.group = c.g.key;
-    renderChips(); resetGrid();
+    setGroup(c.g.key);
     $("#cats").scrollIntoView({ behavior: "smooth", block: "start" });
   };
 }
@@ -85,8 +84,48 @@ function renderHero() {
 function renderChips() {
   const chips = [{ key: "", label: "전체" }, ...GROUPS].map((g) => ({ key: g.key, label: g.label, n: state.counts[g.key] ?? 0 })).filter((c) => c.n);
   $("#cats").replaceChildren(...chips.map((c) =>
-    el("button", { class: "chip", type: "button", "aria-pressed": String(state.group === c.key), onclick: () => { state.group = c.key; renderChips(); resetGrid(); } },
+    el("button", { class: "chip", type: "button", "aria-pressed": String(state.group === c.key), onclick: () => setGroup(c.key) },
       c.label, el("span", { class: "n" }, String(c.n)))));
+}
+
+// 묶음(칩)을 바꾼다: 세부 분류는 비우고, BGM·효과음이면 세부 분류 칩을 보여 준다
+function setGroup(key) {
+  state.group = key;
+  state.facets = [];
+  renderChips();
+  renderFacets();
+  resetGrid();
+}
+
+const facetCache = new Map();
+let facetSeq = 0;
+async function renderFacets() {
+  const box = $("#facets"), group = state.group, my = ++facetSeq;
+  const order = window.RidData.FACET_ORDER[group];
+  if (!order) { box.hidden = true; box.replaceChildren(); return; }
+  let list = facetCache.get(group);
+  if (!list) {
+    try { list = await state.source.facets(group); facetCache.set(group, list); } catch (e) { console.warn(e); list = []; }
+  }
+  if (my !== facetSeq || state.group !== group) return; // 그사이 다른 칩을 눌렀다
+  const rows = order.map((g) => [g, list.filter((f) => f.facet.startsWith(`${g}:`))]).filter(([, fs]) => fs.length > 1 || (fs.length === 1 && g !== "박자"));
+  box.hidden = rows.length === 0;
+  box.replaceChildren(
+    ...rows.map(([g, fs]) => el("div", { class: "facet-row" },
+      el("span", { class: "facet-label" }, g),
+      el("div", { class: "facet-chips" }, ...fs.map(({ facet, count }) =>
+        el("button", { class: "chip", type: "button", "aria-pressed": String(state.facets.includes(facet)), onclick: () => toggleFacet(facet) },
+          facet.slice(g.length + 1), el("span", { class: "n" }, String(count))))))),
+    state.facets.length ? el("button", { class: "facet-clear", type: "button", onclick: () => { state.facets = []; renderFacets(); resetGrid(); } }, "세부 분류 모두 지우기") : null,
+  );
+}
+
+// 같은 갈래에서는 하나만, 다른 갈래끼리는 함께 고를 수 있다 (모두 만족하는 것만 보여 준다)
+function toggleFacet(facet) {
+  const g = facet.split(":")[0];
+  state.facets = state.facets.includes(facet) ? state.facets.filter((f) => f !== facet) : [...state.facets.filter((f) => !f.startsWith(`${g}:`)), facet];
+  renderFacets();
+  resetGrid();
 }
 
 function heartBtn(it, cls = "heart") {
@@ -188,7 +227,7 @@ async function loadMore() {
   if (state.done || (loading && loading.seq === state.seq)) return;
   const token = { seq: state.seq };
   loading = token;
-  const opts = { group: state.group, q: state.q, sort: state.sort, offset: state.offset, limit: window.RidData.PAGE };
+  const opts = { group: state.group, q: state.q, sort: state.sort, offset: state.offset, limit: window.RidData.PAGE, facets: state.facets };
   try {
     let page;
     if (state.favOnly) {
@@ -399,9 +438,7 @@ function openDetail(it) {
 function setQuery(q) {
   state.q = q;
   $("#q").value = q;
-  state.group = "";
-  renderChips();
-  resetGrid();
+  setGroup("");
 }
 
 async function main() {
