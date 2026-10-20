@@ -103,7 +103,7 @@ function paintPlus(plus, it) {
 }
 
 const isAudio = (it) => it.kind === "sfx" || it.kind === "bgm";
-const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+const mmss = (s) => { const t = Math.round(s); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`; };
 const audioLabel = (it) => (it.kind === "bgm" ? `${mmss(it.seconds ?? 0)} 반복` : `${it.seconds ?? "?"}초`);
 
 // 카드 미리 듣기: 화면 전체에서 소리 하나만 재생한다
@@ -117,6 +117,8 @@ function paintPlayButtons() {
   }
 }
 for (const ev of ["play", "pause", "ended"]) player.addEventListener(ev, paintPlayButtons);
+// 재생 실패(주소 만료 등): 버튼을 되돌리고 주소를 새로 받는다
+player.addEventListener("error", () => { playingId = null; paintPlayButtons(); window.ridRefreshSoon?.(); });
 function togglePlay(it) {
   if (playingId === it.id && !player.paused) { player.pause(); return; }
   $("#d-audio").pause();
@@ -172,6 +174,7 @@ function rerenderGrid() {
 // 조건(묶음·검색·정렬·찜)이 바뀌면 처음부터 다시 받는다
 let favSource = null, favAll = null;
 function resetGrid() {
+  player.pause(); // 목록을 새로 그리면 재생 중이던 카드가 사라질 수 있어 미리 듣기를 멈춘다
   state.seq++;
   state.items = []; state.offset = 0; state.done = false; state.total = null; state.error = "";
   favSource = null; favAll = null;
@@ -339,6 +342,15 @@ function setLink(id, path, download, text) {
   a.onclick = handler;
 }
 
+let detailItem = null, detailRetried = false;
+// 상세 창 재생기 주소가 만료됐으면 그 애셋만 다시 서명해 주소를 바꾼다 (한 번만. 파일 자체가 없으면 되풀이하지 않게)
+function retryDetailAudio() {
+  const it = detailItem;
+  if (!it || !isAudio(it) || !$("#detail").open || detailRetried) return;
+  detailRetried = true;
+  state.sign([it]).then(() => { if (detailItem === it) $("#d-audio").src = it.preview; }).catch((e) => console.warn(e));
+}
+
 function openDetail(it) {
   const illust = it.kind === "illust", effect = it.kind === "effect", audio = isAudio(it);
   $("#d-stage").className = `stage ${bgOf(it)} ${audio ? "audio" : ""}`;
@@ -347,6 +359,7 @@ function openDetail(it) {
   const da = $("#d-audio");
   da.pause();
   da.hidden = !audio;
+  detailItem = it; detailRetried = false;
   if (audio) { da.src = it.preview; da.loop = it.kind === "bgm"; } else da.removeAttribute("src");
   $("#d-img").className = it.kind === "pixel" ? "pix" : "";
   $("#d-img").alt = it.name;
@@ -432,6 +445,8 @@ async function main() {
       .finally(() => { refreshing = null; });
   };
   setInterval(() => refresh(true), 25 * 60 * 1000);
+  window.ridRefreshSoon = () => { if (Date.now() - signedAt > 60 * 1000) refresh(true); };
+  $("#d-audio").addEventListener("error", retryDetailAudio);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(false); });
   document.addEventListener("error", (e) => { if (e.target.tagName === "IMG" && Date.now() - signedAt > 60 * 1000) refresh(true); }, true);
 
