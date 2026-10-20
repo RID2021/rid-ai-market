@@ -10,11 +10,13 @@
     item: ["style", "museum-item"],
     animal: ["style", "museum-animal"],
     effect: ["kind", "effect"],
+    sfx: ["kind", "sfx"],
+    bgm: ["kind", "bgm"],
     pixel: ["kind", "pixel"],
   };
   const SEARCH_FIELDS = ["name", "description", "tags", "category"];
   // 묶음 이름으로도 찾는다 (예: '캐릭터'로 찾으면 역사 NPC 전부). app.js 칩 이름과 같게
-  const GROUP_LABEL = { character: "캐릭터", item: "아이템", animal: "동물", effect: "효과 gif", pixel: "픽셀아트" };
+  const GROUP_LABEL = { character: "캐릭터", item: "아이템", animal: "동물", effect: "효과 gif", sfx: "효과음 사운드", bgm: "bgm 배경음악 음악", pixel: "픽셀아트" };
   const labelGroups = (w) => Object.keys(GROUP_LABEL).filter((g) => GROUP_LABEL[g].includes(w));
 
   // 검색어 → 낱말. 서버 필터 문법·LIKE 와일드카드에 쓰이는 기호는 띄어쓰기로 바꿔 나눈다
@@ -40,8 +42,8 @@
     function sorted(query, sort) {
       if (sort === "name") return query.order("data->>name", { ascending: true }).order("id");
       if (sort === "score") return query.order("data->score", { ascending: false, nullsFirst: false }).order("id");
-      // 최신순: 일러스트 → 효과, 같은 날짜 안에서는 검수 점수 높은 것부터
-      return query.order("data->>kind", { ascending: false }).order("data->>added", { ascending: false, nullsFirst: false })
+      // 최신순: 등록 날짜 내림차순(날짜 없는 효과 GIF는 끝), 같은 날짜 안에서는 검수 점수 높은 것부터
+      return query.order("data->>added", { ascending: false, nullsFirst: false })
         .order("data->score", { ascending: false, nullsFirst: false }).order("id");
     }
     const fail = (what, error) => new Error(`${what}을 받지 못했습니다: ${error.message}`);
@@ -97,7 +99,7 @@
   function localCompare(sort) {
     if (sort === "name") return (a, b) => cmp(a.name, b.name) || cmp(a.id, b.id);
     if (sort === "score") return (a, b) => scoreDesc(a, b) || cmp(a.id, b.id);
-    return (a, b) => cmp(b.kind, a.kind) || cmp(b.added || "", a.added || "") || scoreDesc(a, b) || cmp(a.id, b.id);
+    return (a, b) => cmp(b.added || "", a.added || "") || scoreDesc(a, b) || cmp(a.id, b.id);
   }
   function localMatch(it, { group, q }) {
     if (!groupMatch(it, group)) return false;

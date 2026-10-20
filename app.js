@@ -12,6 +12,10 @@ const GROUPS = [
     hero: { title: "전통 문양 동물 컬렉션", sub: (n) => `금빛 문양을 두른 상서로운 동물 ${n}종` } },
   { key: "effect", label: "효과 GIF", sub: "효과 · 움직이는 GIF", test: (it) => it.kind === "effect", bgs: ["bg-night"],
     hero: { title: "움직이는 효과 GIF", sub: (n) => `차원문·반짝임·퀘스트 표시 등 ${n}종` } },
+  { key: "sfx", label: "효과음", sub: "효과음 · AI 설계", test: (it) => it.kind === "sfx", bgs: ["bg-lilac", "bg-sky"],
+    hero: { title: "바로 쓰는 게임 효과음", sub: (n) => `버튼·획득·마법·이동 등 효과음 ${n}개` } },
+  { key: "bgm", label: "BGM", sub: "BGM · AI 작곡", test: (it) => it.kind === "bgm", bgs: ["bg-peach", "bg-cream"],
+    hero: { title: "끊김 없이 반복되는 BGM", sub: (n) => `사람 목소리 없는 배경음악 ${n}곡` } },
   { key: "pixel", label: "픽셀아트", sub: null, test: (it) => it.kind === "pixel", bgs: ["bg-lilac", "bg-pink", "bg-mint", "bg-peach"] },
 ];
 const groupOf = (it) => GROUPS.find((g) => g.test(it)) ?? GROUPS[GROUPS.length - 1];
@@ -98,16 +102,44 @@ function paintPlus(plus, it) {
   plus.textContent = inBag ? "✓" : "+";
 }
 
+const isAudio = (it) => it.kind === "sfx" || it.kind === "bgm";
+const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+const audioLabel = (it) => (it.kind === "bgm" ? `${mmss(it.seconds ?? 0)} 반복` : `${it.seconds ?? "?"}초`);
+
+// 카드 미리 듣기: 화면 전체에서 소리 하나만 재생한다
+const player = new Audio();
+let playingId = null;
+function paintPlayButtons() {
+  for (const b of document.querySelectorAll(".play")) {
+    const on = b.dataset.id === playingId && !player.paused;
+    b.setAttribute("aria-pressed", String(on));
+    b.textContent = on ? "■" : "▶";
+  }
+}
+for (const ev of ["play", "pause", "ended"]) player.addEventListener(ev, paintPlayButtons);
+function togglePlay(it) {
+  if (playingId === it.id && !player.paused) { player.pause(); return; }
+  $("#d-audio").pause();
+  player.src = it.preview;
+  player.loop = it.kind === "bgm";
+  playingId = it.id;
+  player.play().catch((e) => console.warn("재생하지 못했습니다", e));
+}
+
 function card(it) {
   const plus = el("button", { class: "plus", type: "button" });
   paintPlus(plus, it);
   plus.addEventListener("click", () => { toggleBag(it.id); paintPlus(plus, it); });
-  const badge = it.gif && it.kind === "illust" ? (it.motion ? `GIF · ${it.motion}` : "GIF 포함") : null;
+  const audio = isAudio(it);
+  const badge = audio ? audioLabel(it) : it.gif && it.kind === "illust" ? (it.motion ? `GIF · ${it.motion}` : "GIF 포함") : null;
+  const play = audio ? el("button", { class: "play", type: "button", "data-id": it.id, "aria-label": `${it.name} 미리 듣기`, "aria-pressed": "false" }, "▶") : null;
+  if (play) play.addEventListener("click", (e) => { e.stopPropagation(); togglePlay(it); });
   return el("article", { class: "card", "data-id": it.id },
     el("div", { class: "tile-wrap" },
-      el("button", { class: `tile ${bgOf(it)} ${it.kind === "pixel" ? "pixelart" : ""}`, type: "button", "aria-label": `${it.name} 자세히 보기`, onclick: () => openDetail(it) },
+      el("button", { class: `tile ${bgOf(it)} ${it.kind === "pixel" ? "pixelart" : ""} ${audio ? "audio" : ""}`, type: "button", "aria-label": `${it.name} 자세히 보기`, onclick: () => openDetail(it) },
         el("img", { src: it.thumb ?? it.preview, alt: "", loading: "lazy" })),
       badge ? el("span", { class: "anim" }, badge) : null,
+      play,
       heartBtn(it)),
     el("div", { class: "card-foot" },
       el("div", {}, el("h3", {}, it.name), el("p", { class: "sub" }, subOf(it))),
@@ -133,6 +165,7 @@ function renderCount() {
 // 지금 받아 둔 목록을 다시 그린다 (서명 주소를 새로 받았을 때)
 function rerenderGrid() {
   $("#grid").replaceChildren(...state.items.map(card));
+  paintPlayButtons();
   renderCount();
 }
 
@@ -216,8 +249,9 @@ const pathOf = (it, f) => (it.src ? it.src[f] : it[f]);
 
 function filesOf(it, hires) {
   const folder = groupOf(it).label;
-  it = { ...it, file: pathOf(it, "file"), gif: pathOf(it, "gif"), preview: pathOf(it, "preview") };
+  it = { ...it, file: pathOf(it, "file"), gif: pathOf(it, "gif"), preview: pathOf(it, "preview"), midi: pathOf(it, "midi") };
   const name = it.name.replace(/[\\/:*?"<>|]/g, "_");
+  if (isAudio(it)) return [[it.file, `${folder}/${name}.mp3`], hires && it.midi && [it.midi, `${folder}/${name}.mid`]].filter(Boolean);
   if (it.kind === "illust") return [[it.file, `${folder}/${name}.png`], it.gif && [it.gif, `${folder}/${name}.gif`], hires && [it.preview, `${folder}/${name}_고해상도.png`]].filter(Boolean);
   if (it.kind === "effect") return [[it.file, `${folder}/${name}.gif`], hires && [it.preview, `${folder}/${name}_240.gif`]].filter(Boolean);
   return [[it.file, `${folder}/${name}.png`], hires && [it.preview, `${folder}/${name}_확대.png`]].filter(Boolean);
@@ -268,6 +302,8 @@ async function downloadBag() {
 
 // ---------- 상세 ----------
 function sizeLabel(it) {
+  if (it.kind === "sfx") return `MP3 · ${it.seconds}초 · 효과음`;
+  if (it.kind === "bgm") return `MP3 · ${mmss(it.seconds ?? 0)} · 끊김 없이 반복${it.bpm ? ` · ${it.bpm}bpm` : ""}`;
   const [w, h] = it.size;
   if (it.kind === "illust") return `ZEP용 ${w}×${h}px${it.gif ? " · GIF 120×120" : ""} · 고해상도 ${it.hiresSize[0]}×${it.hiresSize[1]}px`;
   if (it.kind === "effect") return `GIF ${w}×${h}px · 큰 GIF ${it.hiresSize[0]}×${it.hiresSize[1]}px`;
@@ -304,9 +340,14 @@ function setLink(id, path, download, text) {
 }
 
 function openDetail(it) {
-  const illust = it.kind === "illust", effect = it.kind === "effect";
-  $("#d-stage").className = `stage ${bgOf(it)}`;
-  $("#d-img").src = effect ? it.preview : illust ? it.thumb ?? it.preview : it.preview;
+  const illust = it.kind === "illust", effect = it.kind === "effect", audio = isAudio(it);
+  $("#d-stage").className = `stage ${bgOf(it)} ${audio ? "audio" : ""}`;
+  $("#d-img").src = effect ? it.preview : illust || audio ? it.thumb ?? it.preview : it.preview;
+  player.pause();
+  const da = $("#d-audio");
+  da.pause();
+  da.hidden = !audio;
+  if (audio) { da.src = it.preview; da.loop = it.kind === "bgm"; } else da.removeAttribute("src");
   $("#d-img").className = it.kind === "pixel" ? "pix" : "";
   $("#d-img").alt = it.name;
   $("#d-cat").textContent = subOf(it);
@@ -318,11 +359,18 @@ function openDetail(it) {
   $("#d-ref").textContent = it.reference || "-";
   $("#d-gen").textContent = it.score != null ? `${it.generator} · ${it.score}점` : it.generator;
   $("#d-tags").replaceChildren(...it.tags.map((t) => el("button", { class: "tag", type: "button", onclick: () => { $("#detail").close(); setQuery(t); } }, `#${t}`)));
-  setLink("#d-png", pathOf(it, "file"), effect ? `${it.id}.gif` : `${it.id}.png`, effect ? "GIF 120×120" : illust ? `PNG ${it.size[0]}×${it.size[1]}` : "원본 PNG");
-  setLink("#d-gif", illust ? pathOf(it, "gif") : null, `${it.id}.gif`, "움직이는 GIF");
-  setLink("#d-big", pathOf(it, "preview"), effect ? `${it.id}@2x.gif` : illust ? `${it.id}@hi.png` : `${it.id}@${it.previewScale}x.png`,
-    effect ? "큰 GIF 240×240" : illust ? `고해상도 ${it.hiresSize[0]}×${it.hiresSize[1]}` : `확대 PNG ${it.previewScale}배`);
-  setLink("#d-spec", pathOf(it, "spec"), `${it.id}.json`, "명세 JSON");
+  if (audio) {
+    setLink("#d-png", pathOf(it, "file"), `${it.id}.mp3`, "MP3 받기");
+    setLink("#d-gif", null);
+    setLink("#d-big", pathOf(it, "midi"), `${it.id}.mid`, "미디 원본(.mid)");
+    setLink("#d-spec", null);
+  } else {
+    setLink("#d-png", pathOf(it, "file"), effect ? `${it.id}.gif` : `${it.id}.png`, effect ? "GIF 120×120" : illust ? `PNG ${it.size[0]}×${it.size[1]}` : "원본 PNG");
+    setLink("#d-gif", illust ? pathOf(it, "gif") : null, `${it.id}.gif`, "움직이는 GIF");
+    setLink("#d-big", pathOf(it, "preview"), effect ? `${it.id}@2x.gif` : illust ? `${it.id}@hi.png` : `${it.id}@${it.previewScale}x.png`,
+      effect ? "큰 GIF 240×240" : illust ? `고해상도 ${it.hiresSize[0]}×${it.hiresSize[1]}` : `확대 PNG ${it.previewScale}배`);
+    setLink("#d-spec", pathOf(it, "spec"), `${it.id}.json`, "명세 JSON");
+  }
   const bagBtn = $("#d-bag");
   const paint = () => {
     const on = state.bag.has(it.id);
@@ -407,7 +455,7 @@ async function main() {
     $("#bag-zip").disabled = false;
   });
   for (const d of [$("#detail"), $("#bag")]) d.addEventListener("click", (e) => { if (e.target === d) d.close(); });
-  $("#detail").addEventListener("close", () => history.replaceState(null, "", location.pathname + location.search));
+  $("#detail").addEventListener("close", () => { $("#d-audio").pause(); history.replaceState(null, "", location.pathname + location.search); });
   // 주소에 #애셋id가 있으면 그 애셋을 받아 바로 연다 (실패해도 목록은 그대로 둔다)
   try {
     const id = decodeURIComponent(location.hash.slice(1));

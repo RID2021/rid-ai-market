@@ -142,6 +142,12 @@ dialog::backdrop { background: rgba(22, 20, 28, 0.55); }
 .cat { margin: 0; color: var(--accent); font-weight: 800; font-size: 14px; }
 .info h2 { margin: 6px 0 6px; font-size: 28px; letter-spacing: -0.02em; }
 .desc { margin: 0 0 12px; color: #4a4752; }
+/* 소리 애셋: 카드의 미리 듣기 버튼, 상세 창 재생기 */
+.play { position: absolute; left: 14px; bottom: 14px; width: 46px; height: 46px; border-radius: 50%; border: 0; background: rgba(20, 20, 30, 0.82); color: #fff; font-size: 18px; cursor: pointer; display: grid; place-items: center; }
+.play:hover { background: #000; }
+.play[aria-pressed="true"] { background: var(--accent, #e0457b); }
+.tile.audio img { max-width: 100%; max-height: 100%; width: 100%; height: 100%; object-fit: cover; filter: none; border-radius: inherit; }
+.player { width: 100%; margin-bottom: 12px; }
 .motion { display: flex; align-items: center; gap: 12px; background: var(--soft); border-radius: 16px; padding: 8px 14px 8px 8px; margin-bottom: 12px; color: var(--muted); font-size: 13px; }
 .motion img { width: 120px; height: 120px; background: #fff; border-radius: 12px; }
 dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 14px; margin: 4px 0 12px; }

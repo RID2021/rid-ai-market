@@ -7,7 +7,7 @@
   const $ = (s) => document.querySelector(s);
   const isLocal = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
   const isCompany = (email) => /@ri-d\.com$/i.test(email || "");
-  const FIELDS = ["file", "gif", "preview", "thumb", "spec"];
+  const FIELDS = ["file", "gif", "preview", "thumb", "spec", "midi"];
   const TTL = 30 * 60; // 화면에 쓰는 서명 주소 유효시간(초). 받기는 매번 로그인 확인 후 짧은 주소로 받는다
   const useNcp = cfg.storage === "ncp";
   let sb = null;

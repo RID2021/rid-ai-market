@@ -8,7 +8,7 @@
   <meta name="robots" content="noindex, nofollow">
   <link rel="icon" href="favicon.png?v=5fad11d18d">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-  <link rel="stylesheet" href="style.css?v=27fdbb4092">
+  <link rel="stylesheet" href="style.css?v=a3850eb019">
 </head>
 <body>
   <header class="top">
@@ -20,7 +20,7 @@
       </a>
       <label class="search">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>
-        <input id="q" type="search" placeholder="유물, NPC, 동물, 효과 검색" autocomplete="off" aria-label="애셋 검색">
+        <input id="q" type="search" placeholder="유물, NPC, 동물, 효과음, BGM 검색" autocomplete="off" aria-label="애셋 검색">
       </label>
       <div class="icons">
         <button id="admin-open" class="pill-btn" type="button" hidden>회원 관리 <span id="admin-count" class="badge inline" hidden>0</span></button>
@@ -40,7 +40,7 @@
     <div class="gate-card">
       <span class="mark big" aria-hidden="true">R</span>
       <h1>RID AI MARKET</h1>
-      <p id="gate-msg" class="gate-msg">임직원 및 고객사 전용 사이트입니다.</p>
+      <p id="gate-msg" class="gate-msg">로켓인디자인 구성원과 승인된 분만 이용할 수 있습니다.</p>
       <div id="gate-login">
         <button id="login-google" class="btn wide google" type="button">
           <svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.4 30.2 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.8 6C12.4 13.7 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.6c-.5 2.9-2.2 5.4-4.7 7.1l7.3 5.7c4.3-4 6.8-9.9 6.8-17.3z"/><path fill="#FBBC05" d="M10.5 28.7c-.5-1.4-.8-3-.8-4.7s.3-3.2.8-4.7l-7.8-6C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.8-6z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.3-5.7c-2 1.4-4.7 2.3-8.6 2.3-6.3 0-11.6-4.2-13.5-9.9l-7.8 6C6.6 42.6 14.6 48 24 48z"/></svg>
@@ -120,6 +120,7 @@
         <h2 id="d-name"></h2>
         <p id="d-desc" class="desc"></p>
         <div id="d-motion" class="motion" hidden><img id="d-gifimg" alt="움직이는 GIF 미리보기" width="120" height="120"><span>실제 크기 GIF 미리보기</span></div>
+        <audio id="d-audio" class="player" controls preload="none" hidden></audio>
         <dl>
           <dt>크기</dt><dd id="d-size"></dd>
           <dt>화풍</dt><dd id="d-ref"></dd>
@@ -145,7 +146,7 @@
       </div>
       <ul id="bag-list" class="bag-list"></ul>
       <p id="bag-empty" class="empty" hidden>아직 담은 애셋이 없습니다. 카드의 + 를 눌러 담아 보세요.</p>
-      <label class="check"><input id="bag-hires" type="checkbox"> 고해상도 PNG도 함께 받기</label>
+      <label class="check"><input id="bag-hires" type="checkbox"> 고해상도 PNG·BGM 미디 원본도 함께 받기</label>
       <div class="bag-actions">
         <button id="bag-clear" class="btn ghost" type="button">모두 비우기</button>
         <button id="bag-zip" class="btn dark" type="button">한 번에 받기 (ZIP)</button>
@@ -180,9 +181,9 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
   <script src="config.js?v=61fb00a468"></script>
-  <script src="data.js?v=5e21ff04cf"></script>
-  <script src="auth.js?v=2252086b8c"></script>
+  <script src="data.js?v=16ec434751"></script>
+  <script src="auth.js?v=f927d9aec8"></script>
   <script src="zip.js?v=a5e676c86f"></script>
-  <script src="app.js?v=bdbd341579"></script>
+  <script src="app.js?v=896835a196"></script>
 </body>
 </html>
