@@ -3,4 +3,6 @@
 window.RID_CONFIG = {
   supabaseUrl: "https://fascatopsmfcprnsjbpj.supabase.co",
   supabaseAnonKey: "sb_publishable_HeosplW3lAx9ArzDoBCvGw_ZFEUhWHS",
+  // 그림 파일 저장소: "ncp"(NCP Object Storage 비공개 버킷, 2026-10-20부터) 또는 "supabase"(예전)
+  storage: "ncp",
 };

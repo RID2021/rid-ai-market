@@ -1,4 +1,6 @@
 // 로그인·승인 확인·회원 관리 (Supabase)
+// 그림 파일: config.js의 storage가 "ncp"면 NCP Object Storage 비공개 버킷(서명 주소는 Supabase 함수 sign_asset_urls가 만든다),
+//            아니면 Supabase Storage 비공개 버킷
 // config.js가 비어 있으면 로컬 개발(localhost)에서만 catalog.json을 그대로 쓴다
 (function () {
   const cfg = window.RID_CONFIG || {};
@@ -6,7 +8,8 @@
   const isLocal = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
   const isCompany = (email) => /@ri-d\.com$/i.test(email || "");
   const FIELDS = ["file", "gif", "preview", "thumb", "spec"];
-  const TTL = 30 * 60; // 화면에 쓰는 서명 주소 유효시간(초). 받기는 매번 로그인 확인 후 직접 받는다
+  const TTL = 30 * 60; // 화면에 쓰는 서명 주소 유효시간(초). 받기는 매번 로그인 확인 후 짧은 주소로 받는다
+  const useNcp = cfg.storage === "ncp";
   let sb = null;
   let me = null;
 
@@ -61,27 +64,48 @@
     $("#logout").onclick = logout;
   }
 
+  // 경로 목록 → 서명 주소 Map. 요청할 때마다 서버가 로그인·승인을 다시 확인한다
+  async function signPaths(paths, ttl) {
+    const map = new Map();
+    const step = useNcp ? 500 : 100;
+    for (let i = 0; i < paths.length; i += step) {
+      const chunk = paths.slice(i, i + step);
+      if (useNcp) {
+        const { data, error } = await sb.rpc("sign_asset_urls", { paths: chunk, ttl });
+        if (error) throw new Error(`파일 주소를 받지 못했습니다: ${error.message}`);
+        for (const d of data) if (d.url) map.set(d.path, d.url);
+      } else {
+        const { data, error } = await sb.storage.from("assets").createSignedUrls(chunk, ttl);
+        if (error) throw new Error(`파일 주소를 받지 못했습니다: ${error.message}`);
+        for (const d of data) if (d.signedUrl) map.set(d.path, d.signedUrl);
+      }
+    }
+    return map;
+  }
+
   // 비공개 버킷 경로 → 짧은 서명 주소 (원래 경로는 it.src에 보관)
   async function signItems(items) {
     for (const it of items) it.src ??= Object.fromEntries(FIELDS.filter((f) => it[f]).map((f) => [f, it[f]]));
-    const show = ["thumb", "preview", "gif"]; // 화면에 쓰는 것만 서명. file·spec은 받을 때 직접 받는다
+    const show = ["thumb", "preview", "gif"]; // 화면에 쓰는 것만 서명. file·spec은 받을 때 따로 받는다
     const paths = [...new Set(items.flatMap((it) => show.map((f) => it.src[f]).filter(Boolean)))];
-    const map = new Map();
-    for (let i = 0; i < paths.length; i += 100) {
-      const { data, error } = await sb.storage.from("assets").createSignedUrls(paths.slice(i, i + 100), TTL);
-      if (error) throw new Error(`파일 주소를 받지 못했습니다: ${error.message}`);
-      for (const d of data) if (d.signedUrl) map.set(d.path, d.signedUrl);
-    }
+    const map = await signPaths(paths, TTL);
     const missing = paths.filter((p) => !map.has(p));
     if (missing.length) console.warn("서명하지 못한 파일", missing);
     for (const it of items) for (const f of show) if (it.src[f]) it[f] = map.get(it.src[f]) ?? "";
     return items;
   }
 
-  // 파일 받기: 요청마다 로그인·승인을 다시 확인하는 download()로 받는다
+  // 파일 받기: 요청마다 로그인·승인을 다시 확인한다 (NCP는 2분짜리 서명 주소, Supabase는 download())
   window.ridBlob = async function (path) {
     if (!sb) {
       const res = await fetch(path);
+      if (!res.ok) throw new Error(`${path} (${res.status})`);
+      return res.blob();
+    }
+    if (useNcp) {
+      const url = (await signPaths([path], 120)).get(path);
+      if (!url) throw new Error(`${path}: 받을 수 없는 파일입니다`);
+      const res = await fetch(url);
       if (!res.ok) throw new Error(`${path} (${res.status})`);
       return res.blob();
     }
@@ -226,8 +250,15 @@
     document.body.classList.remove("gated");
     showUser(me, profile);
     if (isCompany(me.email)) setupAdmin().catch(() => { $("#admin-open").hidden = true; });
-    const { data: rows, error } = await sb.from("assets").select("data");
-    if (error) throw new Error(`목록을 받지 못했습니다: ${error.message}`);
+    // 서버가 한 번에 돌려주는 줄 수에 한도(기본 1000)가 있어 나눠 받는다
+    const rows = [];
+    for (let from = 0; ; ) {
+      const { data, error } = await sb.from("assets").select("data").order("id").range(from, from + 999);
+      if (error) throw new Error(`목록을 받지 못했습니다: ${error.message}`);
+      rows.push(...data);
+      if (!data.length) break;
+      from += data.length;
+    }
     return signItems(rows.map((r) => r.data));
   };
 })();
