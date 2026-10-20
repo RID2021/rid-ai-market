@@ -127,6 +127,7 @@ a { color: inherit; }
 .bg-pink { background: #fbe9ef; }
 .bg-sky { background: #e8f1fb; }
 .bg-night { background: radial-gradient(circle at 50% 50%, #3a2a55 0%, #1d1626 75%); }
+.bg-floor { background: radial-gradient(circle at 50% 45%, #f7f8fa 0%, #e4e7ec 100%); }
 
 /* 쓰는 법·아래 */
 .howto { background: var(--soft); border-radius: var(--radius); padding: 26px 30px; margin: 10px 0 30px; }

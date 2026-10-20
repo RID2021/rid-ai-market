@@ -12,6 +12,7 @@ const GROUPS = [
     hero: { title: "전통 문양 동물 컬렉션", sub: (n) => `금빛 문양을 두른 상서로운 동물 ${n}종` } },
   { key: "effect", label: "효과 GIF", sub: "효과 · 움직이는 GIF", test: (it) => it.kind === "effect", bgs: ["bg-night"],
     hero: { title: "움직이는 효과 GIF", sub: (n) => `차원문·반짝임·퀘스트 표시 등 ${n}종` } },
+  { key: "sign", label: "안내 글자", sub: "안내 글자 · 움직이는 GIF", test: (it) => it.kind === "sign", bgs: ["bg-floor"] },
   { key: "sfx", label: "효과음", sub: "효과음 · AI 설계", test: (it) => it.kind === "sfx", bgs: ["bg-lilac", "bg-sky"],
     hero: { title: "바로 쓰는 게임 효과음", sub: (n) => `버튼·획득·마법·이동 등 효과음 ${n}개` } },
   { key: "bgm", label: "BGM", sub: "BGM · AI 작곡", test: (it) => it.kind === "bgm", bgs: ["bg-peach", "bg-cream"],
@@ -117,7 +118,8 @@ async function renderFacets() {
       el("div", { class: "facet-chips" }, ...fs.map(({ facet, count }) =>
         el("button", { class: "chip", type: "button", "aria-pressed": String(state.facets.includes(facet)), onclick: () => toggleFacet(facet) },
           facet.slice(g.length + 1), el("span", { class: "n" }, String(count))))))),
-    state.facets.length ? el("button", { class: "facet-clear", type: "button", onclick: () => { state.facets = []; renderFacets(); resetGrid(); } }, "세부 분류 모두 지우기") : null,
+    // replaceChildren은 null을 'null' 글자로 넣으므로 고른 분류가 있을 때만 버튼을 넣는다
+    ...(state.facets.length ? [el("button", { class: "facet-clear", type: "button", onclick: () => { state.facets = []; renderFacets(); resetGrid(); } }, "세부 분류 모두 지우기")] : []),
   );
 }
 
@@ -174,7 +176,7 @@ function card(it) {
   paintPlus(plus, it);
   plus.addEventListener("click", () => { toggleBag(it.id); paintPlus(plus, it); });
   const audio = isAudio(it);
-  const badge = audio ? audioLabel(it) : it.gif && it.kind === "illust" ? (it.motion ? `GIF · ${it.motion}` : "GIF 포함") : null;
+  const badge = audio ? audioLabel(it) : it.kind === "sign" ? "움직이는 GIF" : it.gif && it.kind === "illust" ? (it.motion ? `GIF · ${it.motion}` : "GIF 포함") : null;
   const play = audio ? el("button", { class: "play", type: "button", "data-id": it.id, "aria-label": `${it.name} 미리 듣기`, "aria-pressed": "false" }, "▶") : null;
   if (play) play.addEventListener("click", (e) => { e.stopPropagation(); togglePlay(it); });
   return el("article", { class: "card", "data-id": it.id },
@@ -298,6 +300,7 @@ function filesOf(it, hires) {
   if (isAudio(it)) return [[it.file, `${folder}/${name}.mp3`], hires && it.midi && [it.midi, `${folder}/${name}.mid`]].filter(Boolean);
   if (it.kind === "illust") return [[it.file, `${folder}/${name}.png`], it.gif && [it.gif, `${folder}/${name}.gif`], hires && [it.preview, `${folder}/${name}_고해상도.png`]].filter(Boolean);
   if (it.kind === "effect") return [[it.file, `${folder}/${name}.gif`], hires && [it.preview, `${folder}/${name}_240.gif`]].filter(Boolean);
+  if (it.kind === "sign") return [[it.gif, `${folder}/${name}.gif`], [it.file, `${folder}/${name}.png`], hires && [it.preview, `${folder}/${name}_고해상도.png`]].filter(Boolean);
   return [[it.file, `${folder}/${name}.png`], hires && [it.preview, `${folder}/${name}_확대.png`]].filter(Boolean);
 }
 
@@ -351,6 +354,7 @@ function sizeLabel(it) {
   const [w, h] = it.size;
   if (it.kind === "illust") return `ZEP용 ${w}×${h}px${it.gif ? " · GIF 120×120" : ""} · 고해상도 ${it.hiresSize[0]}×${it.hiresSize[1]}px`;
   if (it.kind === "effect") return `GIF ${w}×${h}px · 큰 GIF ${it.hiresSize[0]}×${it.hiresSize[1]}px`;
+  if (it.kind === "sign") return `움직이는 GIF ${w}×${h}px · 정지 PNG ${it.stillSize[0]}×${it.stillSize[1]}px · 고해상도 ${it.hiresSize[0]}×${it.hiresSize[1]}px`;
   return `${w}×${h}px · ${it.tiles[0]}×${it.tiles[1]}칸 (32px 타일)`;
 }
 
@@ -393,9 +397,9 @@ function retryDetailAudio() {
 }
 
 function openDetail(it) {
-  const illust = it.kind === "illust", effect = it.kind === "effect", audio = isAudio(it);
+  const illust = it.kind === "illust", effect = it.kind === "effect", audio = isAudio(it), sign = it.kind === "sign";
   $("#d-stage").className = `stage ${bgOf(it)} ${audio ? "audio" : ""}`;
-  $("#d-img").src = effect ? it.preview : illust || audio ? it.thumb ?? it.preview : it.preview;
+  $("#d-img").src = sign ? it.gif : effect ? it.preview : illust || audio ? it.thumb ?? it.preview : it.preview;
   player.pause();
   const da = $("#d-audio");
   da.pause();
@@ -417,6 +421,11 @@ function openDetail(it) {
     setLink("#d-png", pathOf(it, "file"), `${it.id}.mp3`, "MP3 받기");
     setLink("#d-gif", null);
     setLink("#d-big", pathOf(it, "midi"), `${it.id}.mid`, "미디 원본(.mid)");
+    setLink("#d-spec", null);
+  } else if (sign) {
+    setLink("#d-png", pathOf(it, "gif"), `${it.id}.gif`, `움직이는 GIF ${it.size[0]}×${it.size[1]}`);
+    setLink("#d-gif", pathOf(it, "file"), `${it.id}.png`, "정지 PNG");
+    setLink("#d-big", pathOf(it, "preview"), `${it.id}@hi.png`, `고해상도 ${it.hiresSize[0]}×${it.hiresSize[1]}`);
     setLink("#d-spec", null);
   } else {
     setLink("#d-png", pathOf(it, "file"), effect ? `${it.id}.gif` : `${it.id}.png`, effect ? "GIF 120×120" : illust ? `PNG ${it.size[0]}×${it.size[1]}` : "원본 PNG");
