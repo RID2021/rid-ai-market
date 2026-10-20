@@ -363,11 +363,15 @@ function setLink(id, path, download, text) {
   const a = $(id);
   a.hidden = !path;
   delete a.dataset.busy;
+  delete a.dataset.direct;
+  a.removeAttribute("target");
+  a.removeAttribute("rel");
   if (!path) return;
   a.href = "#";
   a.removeAttribute("download");
   a.textContent = text;
   const handler = async (e) => {
+    if (a.dataset.direct) return; // '새 탭에서 열기'로 바뀐 뒤에는 브라우저가 링크를 그대로 연다
     e.preventDefault();
     if (a.dataset.busy) return;
     a.dataset.busy = "1";
@@ -378,10 +382,19 @@ function setLink(id, path, download, text) {
       document.body.append(tmp); tmp.click(); tmp.remove();
       setTimeout(() => URL.revokeObjectURL(url), 10000);
     } catch (err) {
-      alert(`받지 못했습니다: ${err.message}`);
+      // 바로 받지 못하면 버튼을 서명 주소 링크로 바꾼다. 한 번 더 누르면 새 탭에 파일이 열린다 (fetch를 거치지 않음)
+      const url = await window.ridFileUrl?.(path).catch(() => null);
+      if (url && a.onclick === handler) {
+        a.href = url; a.target = "_blank"; a.rel = "noopener"; a.dataset.direct = "1";
+        delete a.dataset.busy;
+        a.textContent = `${text} · 새 탭에서 열기`;
+        alert(`바로 받지 못했습니다 (${err.message}).\n버튼이 '새 탭에서 열기'로 바뀌었습니다. 한 번 더 누르면 새 탭에 파일이 열리고, 오른쪽 클릭 → 다른 이름으로 저장으로 받을 수 있습니다.`);
+      } else {
+        alert(`받지 못했습니다: ${err.message}`);
+      }
     } finally {
-      // 그사이 다른 애셋을 열었으면 그 버튼 글자를 건드리지 않는다
-      if (a.onclick === handler) { delete a.dataset.busy; a.textContent = text; }
+      // 그사이 다른 애셋을 열었거나 '새 탭에서 열기'로 바뀌었으면 버튼 글자를 건드리지 않는다
+      if (a.onclick === handler && !a.dataset.direct) { delete a.dataset.busy; a.textContent = text; }
     }
   };
   a.onclick = handler;

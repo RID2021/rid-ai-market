@@ -95,7 +95,10 @@
     return items;
   }
 
-  // 파일 받기: 요청마다 로그인·승인을 다시 확인한다 (NCP는 2분짜리 서명 주소, Supabase는 download())
+  // 파일 받기: 요청마다 로그인·승인을 다시 확인한다 (NCP는 짧은 서명 주소, Supabase는 download())
+  //   NCP는 브라우저 캐시를 쓰지 않고 받는다(no-store). 같은 주소를 그림(img)으로 먼저 불러 둔 캐시에는 CORS 머리글이 없어
+  //   fetch가 'Failed to fetch'로 실패한다 (2026-10-21 재현). NCP 오류 응답(서명·만료·일시 오류)에도 CORS 머리글이 없어
+  //   같은 메시지만 보이므로, 실패하면 유효시간을 바꾼 새 주소(= 다른 주소)로 한 번 더 받는다
   window.ridBlob = async function (path) {
     if (!sb) {
       const res = await fetch(path);
@@ -103,15 +106,29 @@
       return res.blob();
     }
     if (useNcp) {
-      const url = (await signPaths([path], 120)).get(path);
-      if (!url) throw new Error(`${path}: 받을 수 없는 파일입니다`);
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`${path} (${res.status})`);
-      return res.blob();
+      let last = null;
+      for (const ttl of [120, 300]) {
+        const url = (await signPaths([path], ttl)).get(path);
+        if (!url) throw new Error(`${path}: 받을 수 없는 파일입니다`);
+        try {
+          const res = await fetch(url, { cache: "no-store" });
+          if (res.ok) return await res.blob();
+          last = new Error(`${path} (${res.status})`);
+        } catch (e) {
+          last = new Error(`${path}: ${e.message}`);
+        }
+        console.warn("파일 받기 실패", last.message);
+      }
+      throw last;
     }
     const { data, error } = await sb.storage.from("assets").download(path);
     if (error) throw new Error(`${path}: ${error.message}`);
     return data;
+  };
+  // 바로 받기가 막혔을 때 쓰는 새 탭 주소 (보안 프로그램·네트워크가 fetch만 막는 경우 등). 10~20분 유효
+  window.ridFileUrl = async function (path) {
+    if (!sb) return path;
+    return (await signPaths([path], 600)).get(path) ?? null;
   };
 
   function showUser(user, profile) {
