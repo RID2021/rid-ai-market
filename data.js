@@ -14,7 +14,7 @@
     bgm: ["kind", "bgm"],
     pixel: ["kind", "pixel"],
   };
-  const SEARCH_FIELDS = ["name", "description", "tags", "category", "facets"];
+  const SEARCH_FIELDS = ["name", "description", "tags", "category", "facetText"];
   // 세부 분류 갈래 순서 (scripts/audio/facets.mjs의 FACET_ORDER와 같아야 한다 — 시험이 확인)
   const FACET_ORDER = {
     bgm: ["장르", "편성", "분위기", "빠르기", "음역", "악기", "악기 수", "쓰임새", "조성", "박자", "드럼"],
@@ -123,7 +123,7 @@
     if (facets.length && !facets.every((f) => (it.facets ?? []).includes(f))) return false;
     const ws = words(q);
     if (!ws.length) return true;
-    const fields = [it.name, it.description, JSON.stringify(it.tags ?? []), it.category, JSON.stringify(it.facets ?? []), it.id].map((s) => String(s ?? "").toLowerCase());
+    const fields = [it.name, it.description, JSON.stringify(it.tags ?? []), it.category, it.facetText, it.id].map((s) => String(s ?? "").toLowerCase());
     return ws.every((w) => fields.some((f) => f.includes(w)) || labelGroups(w).some((g) => groupMatch(it, g)));
   }
   function localSource(all) {

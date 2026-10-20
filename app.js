@@ -105,7 +105,8 @@ async function renderFacets() {
   if (!order) { box.hidden = true; box.replaceChildren(); return; }
   let list = facetCache.get(group);
   if (!list) {
-    try { list = await state.source.facets(group); facetCache.set(group, list); } catch (e) { console.warn(e); list = []; }
+    box.hidden = true; box.replaceChildren(); // 받는 동안 이전 묶음의 칩을 누르지 않게
+    try { list = await state.source.facets(group); if (list.length) facetCache.set(group, list); } catch (e) { console.warn(e); list = []; }
   }
   if (my !== facetSeq || state.group !== group) return; // 그사이 다른 칩을 눌렀다
   const rows = order.map((g) => [g, list.filter((f) => f.facet.startsWith(`${g}:`))]).filter(([, fs]) => fs.length > 1 || (fs.length === 1 && g !== "박자"));
@@ -123,6 +124,7 @@ async function renderFacets() {
 // 같은 갈래에서는 하나만, 다른 갈래끼리는 함께 고를 수 있다 (모두 만족하는 것만 보여 준다)
 function toggleFacet(facet) {
   const g = facet.split(":")[0];
+  if (!window.RidData.FACET_ORDER[state.group]?.includes(g)) return; // 다른 묶음의 분류는 무시
   state.facets = state.facets.includes(facet) ? state.facets.filter((f) => f !== facet) : [...state.facets.filter((f) => !f.startsWith(`${g}:`)), facet];
   renderFacets();
   resetGrid();
