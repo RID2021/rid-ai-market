@@ -16,21 +16,50 @@
   // 화면에 보이는 계정 이름: 아이디 계정은 아이디만
   const shown = (email) => (isGuest(email) ? `${email.split("@")[0]} (아이디)` : email || "");
 
-  // 초대 링크(?invite=…)로 들어오면 코드를 기억하고 주소창에서 지운다 (Google·Microsoft에 다녀와도 남게)
+  // 초대 링크(?invite=…)로 들어오면 코드를 기억한다 (Google·Microsoft에 다녀와도 남게).
+  //   주소창의 ?invite=는 쓰기 전까지 남겨 둔다: 카카오톡 안에서 '다른 브라우저로 열기'를 해도 초대가 따라가게 (2026-10-21 검토)
+  //   저장소를 막은 브라우저에서는 localStorage를 읽기만 해도 예외가 나므로 모두 try 안에서, 메모리에도 둔다
   const INVITE_KEY = "rid.invite";
+  const CODE_RE = /^[A-Za-z0-9_-]{16,64}$/;
+  let inviteMem = "";
   const invite = {
-    get() { for (const st of [localStorage, sessionStorage]) { try { const v = st.getItem(INVITE_KEY); if (v) return v; } catch { /* 저장소를 못 쓰는 브라우저 */ } } return ""; },
-    set(v) { for (const st of [localStorage, sessionStorage]) { try { v ? st.setItem(INVITE_KEY, v) : st.removeItem(INVITE_KEY); } catch { /* 무시 */ } } },
+    get() {
+      if (inviteMem) return inviteMem;
+      for (const name of ["localStorage", "sessionStorage"]) {
+        try { const v = window[name].getItem(INVITE_KEY); if (v) return (inviteMem = v); } catch { /* 저장소를 못 쓰는 브라우저 */ }
+      }
+      return "";
+    },
+    set(v) {
+      inviteMem = v || "";
+      for (const name of ["localStorage", "sessionStorage"]) {
+        try { v ? window[name].setItem(INVITE_KEY, v) : window[name].removeItem(INVITE_KEY); } catch { /* 무시 */ }
+      }
+      if (!v) dropInviteFromUrl();
+    },
   };
-  (() => {
+  function dropInviteFromUrl() {
     const u = new URL(location.href);
-    const code = u.searchParams.get("invite");
-    if (code == null) return;
-    if (/^[A-Za-z0-9_-]{16,64}$/.test(code)) invite.set(code);
+    if (!u.searchParams.has("invite")) return;
     u.searchParams.delete("invite");
     history.replaceState(history.state, "", u.pathname + u.search + u.hash);
-  })();
+  }
+  // 초대 링크·코드 문자열 → 코드
+  const inviteCodeOf = (text) => {
+    const t = String(text || "").trim();
+    try { const c = new URL(t).searchParams.get("invite"); if (c) return CODE_RE.test(c) ? c : ""; } catch { /* 주소가 아니면 코드 그대로 */ }
+    return CODE_RE.test(t) ? t : "";
+  };
+  {
+    const code = new URL(location.href).searchParams.get("invite");
+    if (code != null) { if (CODE_RE.test(code)) invite.set(code); else dropInviteFromUrl(); }
+  }
   let inviteError = "";
+  // 사이트 데이터 저장이 막힌 브라우저 (로그인이 새로고침 뒤에 유지되지 않는다)
+  const canStore = (() => { try { localStorage.setItem("rid.t", "1"); localStorage.removeItem("rid.t"); return true; } catch { return false; } })();
+  // 카카오톡·네이버 등 앱 안 브라우저: Google 로그인이 막힌다 (disallowed_useragent)
+  const inAppKakao = /KAKAOTALK/i.test(navigator.userAgent);
+  const inApp = inAppKakao || /NAVER\(inapp|Instagram|FBAN|FBAV|\bLine\/|everytimeApp|DaumApps|SamsungBrowser\/.*CrossApp/i.test(navigator.userAgent);
   const FIELDS = ["file", "gif", "preview", "thumb", "spec", "midi"];
   const TTL = 30 * 60; // 화면에 쓰는 서명 주소 유효시간(초). 받기는 매번 로그인 확인 후 짧은 주소로 받는다
   const useNcp = cfg.storage === "ncp";
@@ -103,7 +132,17 @@
     $("#logout").onclick = logout;
   }
 
-  // 로그인 화면의 초대 링크 안내. 쓸 수 없는 링크면 기억한 코드를 지운다
+  // 로그인 화면 안내: 앱 안 브라우저·저장 막힘·초대 링크. 쓸 수 없는 초대 링크면 기억한 코드를 지운다
+  function showBrowserNotes() {
+    const box = $("#browser-note");
+    const lines = [];
+    if (inApp) lines.push("앱(카카오톡 등) 안에서는 Google 로그인이 막힐 수 있습니다. 아이디로 가입하거나 외부 브라우저(Chrome·Safari)로 열어 주세요.");
+    if (!canStore) lines.push("이 브라우저는 사이트 데이터 저장이 막혀 있어 로그인이 유지되지 않습니다. 브라우저 설정에서 이 사이트의 쿠키·데이터 저장을 허용해 주세요.");
+    box.hidden = lines.length === 0;
+    box.querySelector("p").textContent = lines.join(" ");
+    $("#open-external").hidden = !inAppKakao;
+    $("#open-external").onclick = () => { location.href = `kakaotalk://web/openExternal?url=${encodeURIComponent(location.href)}`; };
+  }
   async function showInvite() {
     const code = invite.get(), note = $("#invite-note");
     $("#id-signup-open").hidden = !code;
@@ -439,7 +478,7 @@
     sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
     wireGate();
     const { data: { session } } = await sb.auth.getSession();
-    if (!session) { showGate("login"); showInvite().catch((e) => console.warn(e)); return null; }
+    if (!session) { showGate("login"); showBrowserNotes(); showInvite().catch((e) => console.warn(e)); return null; }
     me = session.user;
     // 가입 정보 확인·보충 (회사 계정 자동 승인 포함). 서버 함수가 아직 없으면(설정 전) 건너뛴다
     const ens = await sb.rpc("ensure_my_profile");
@@ -465,6 +504,17 @@
     }
     if (profile.status !== "approved") {
       $("#wait-email").textContent = shown(profile.email);
+      // 대기 화면: 초대 링크를 붙여 넣어 승인받기 (다른 브라우저로 옮겨 초대가 빠졌을 때)
+      $("#wait-invite").onsubmit = async (e) => {
+        e.preventDefault();
+        const c = inviteCodeOf($("#wait-invite-input").value);
+        if (!c) return status("초대 링크나 코드를 그대로 붙여 넣어 주세요.");
+        status("확인 중…");
+        const { error } = await sb.rpc("redeem_invite", { p_code: c });
+        if (error) return status(`초대 링크를 쓰지 못했습니다: ${error.message}`);
+        invite.set("");
+        location.reload();
+      };
       if (profile.status === "rejected") {
         showGate("error", "이 계정은 이용 승인이 거절됐습니다. 관리자에게 문의하세요.");
         $("#gate-logout").hidden = false;

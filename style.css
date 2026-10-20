@@ -279,3 +279,6 @@ html { overflow-anchor: none; }
 .invite-form #inv-uses { width: 80px; }
 .invite-form label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
 .member-list .tagline { margin-left: 6px; font-size: 11px; font-weight: 700; color: #1d4f91; background: #eef6ff; border-radius: 999px; padding: 2px 8px; align-self: flex-start; }
+#browser-note p { margin: 0; }
+#browser-note .btn { margin-top: 8px; }
+#wait-invite { margin-top: 14px; }
