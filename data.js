@@ -4,6 +4,7 @@
 // 브라우저에서는 window.RidData, Node 시험에서는 globalThis.RidData로 쓴다
 (function (root) {
   const PAGE = 60;
+  const TOP_N = 3; // 배너에 쓰는 묶음별 상위 개수 (동기화가 메타 행에 이만큼 넣는다)
   // 칩 묶음 → 서버 조건 [필드, 값]
   const GROUP_WHERE = {
     character: ["style", "hangang-npc"],
@@ -59,6 +60,12 @@
         .order("data->score", { ascending: false, nullsFirst: false }).order("id");
     }
     const fail = (what, error) => new Error(`${what}을 받지 못했습니다: ${error.message}`);
+    // 메타 행의 칩 개수·배너·세부 분류를 한 번만 받아 같이 쓴다 (추천 검색어는 커서 따로 받는다)
+    //   예전에는 첫 화면마다 개수 9번·배너 4번을 서버가 1만여 행을 훑어 계산했다 (2026-10-21 시간 초과로 목록이 안 떴다)
+    let metaP = null;
+    const meta = () => (metaP ??= Promise.resolve(sb.from("assets").select("counts:data->counts,top:data->top,facets:data->facets").eq("id", META_ID).maybeSingle())
+      .then(({ data, error }) => { if (error) throw error; return data ?? {}; })
+      .catch((e) => { metaP = null; throw e; }));
     return {
       async page({ group = "", q = "", sort = "new", offset = 0, limit = PAGE, facets = [] } = {}) {
         // 전체 개수는 첫 묶음에서만 센다 (수만 행에서 묶음마다 전체를 다시 세지 않게). 다음 묶음은 total: null
@@ -73,9 +80,12 @@
         if (error) throw fail("목록", error);
         return { items: data.map((r) => r.data), total: offset === 0 ? count ?? data.length : null };
       },
-      // 칩 옆 숫자: { "": 전체, character: n, ... }
+      // 칩 옆 숫자: { "": 전체, character: n, ... } (동기화가 메타 행에 넣어 둔 값. 없으면 서버가 센다)
       async counts() {
         const keys = ["", ...Object.keys(GROUP_WHERE)];
+        const m = await meta().catch((e) => { throw fail("개수", e); });
+        // jsonb는 키 순서를 바꿔 저장하므로 순서를 다시 맞춘다
+        if (m.counts) return Object.fromEntries(keys.map((k) => [k, m.counts[k] ?? 0]));
         const nums = await Promise.all(keys.map(async (g) => {
           const { count, error } = await filtered(sb.from("assets").select("id", { count: "exact", head: true }), { group: g });
           if (error) throw fail("개수", error);
@@ -83,18 +93,19 @@
         }));
         return Object.fromEntries(keys.map((k, i) => [k, nums[i]]));
       },
-      // 배너: 묶음마다 검수 점수 상위 n개
+      // 배너: 묶음마다 검수 점수 상위 n개 (메타 행에 TOP_N개까지 있다. 없거나 더 달라면 서버가 정렬한다)
       async top(group, n = 3) {
+        const m = await meta().catch((e) => { throw fail("배너", e); });
+        if (m.top?.[group] && n <= TOP_N) return m.top[group].slice(0, n);
         const { data, error } = await filtered(sb.from("assets").select("data"), { group })
           .order("data->score", { ascending: false, nullsFirst: false }).order("id").limit(n);
         if (error) throw fail("배너", error);
         return data.map((r) => r.data);
       },
-      // 세부 분류 칩과 개수: [{ facet: "장르:국악", count }] (동기화가 계산해 둔 특별한 행에서 facets만 읽는다)
+      // 세부 분류 칩과 개수: [{ facet: "장르:국악", count }] (동기화가 계산해 둔 특별한 행)
       async facets(group) {
-        const { data, error } = await sb.from("assets").select("facets:data->facets").eq("id", META_ID).maybeSingle();
-        if (error) throw fail("세부 분류", error);
-        return data?.facets?.[group] ?? [];
+        const m = await meta().catch((e) => { throw fail("세부 분류", e); });
+        return m.facets?.[group] ?? [];
       },
       // 추천 검색어 목록 [[낱말, 애셋 수, 묶음]] (같은 특별한 행의 suggest. 검색창을 처음 누를 때 한 번 받는다)
       async suggestions() {
@@ -141,16 +152,20 @@
         const list = all.filter((it) => localMatch(it, { group, q, facets })).sort(localCompare(sort));
         return { items: list.slice(offset, offset + limit), total: list.length };
       },
-      async counts() {
-        return Object.fromEntries(["", ...Object.keys(GROUP_WHERE)].map((g) => [g, all.filter((it) => groupMatch(it, g)).length]));
-      },
-      async top(group, n = 3) {
-        return all.filter((it) => groupMatch(it, group)).sort((a, b) => scoreDesc(a, b) || cmp(a.id, b.id)).slice(0, n);
-      },
+      async counts() { return countsOf(all); },
+      async top(group, n = 3) { return topOf(all, group, n); },
       async byIds(ids) { return ids.map((id) => byId.get(id)).filter(Boolean); },
       async facets(group) { return facetCounts(all)[group] ?? []; },
       async suggestions() { return suggestTerms(all); },
     };
+  }
+
+  // 칩 개수와 배너(점수 상위). 로컬 창구가 쓰고, 동기화가 같은 함수로 메타 행에 넣는다 (groupSummary)
+  const countsOf = (all) => Object.fromEntries(["", ...Object.keys(GROUP_WHERE)].map((g) => [g, all.filter((it) => groupMatch(it, g)).length]));
+  const topOf = (all, group, n) => all.filter((it) => groupMatch(it, group)).sort((a, b) => scoreDesc(a, b) || cmp(a.id, b.id)).slice(0, n);
+  function groupSummary(items) {
+    const all = items.filter((it) => it.id !== META_ID);
+    return { counts: countsOf(all), top: Object.fromEntries(Object.keys(GROUP_WHERE).map((g) => [g, topOf(all, g, TOP_N)])) };
   }
 
   // 카탈로그에서 묶음별 세부 분류 개수 (동기화가 서버에 저장하는 것과 같은 계산)
@@ -221,5 +236,5 @@
     return scored.sort((a, b) => b[0] - a[0] || b[1][1] - a[1][1] || a[1][0].length - b[1][0].length || cmp(a[1][0], b[1][0])).slice(0, n).map((x) => x[1]);
   }
 
-  root.RidData = { PAGE, GROUP_WHERE, GROUP_LABEL, FACET_ORDER, META_ID, words, serverSource, localSource, localMatch, localCompare, facetCounts, suggestTerms, suggestMatch, choseong };
+  root.RidData = { PAGE, TOP_N, GROUP_WHERE, GROUP_LABEL, FACET_ORDER, META_ID, words, serverSource, localSource, localMatch, localCompare, facetCounts, groupSummary, suggestTerms, suggestMatch, choseong };
 })(typeof window !== "undefined" ? window : globalThis);
