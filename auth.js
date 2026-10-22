@@ -60,7 +60,7 @@
   // 카카오톡·네이버 등 앱 안 브라우저: Google 로그인이 막힌다 (disallowed_useragent)
   const inAppKakao = /KAKAOTALK/i.test(navigator.userAgent);
   const inApp = inAppKakao || /NAVER\(inapp|Instagram|FBAN|FBAV|\bLine\/|everytimeApp|DaumApps|SamsungBrowser\/.*CrossApp/i.test(navigator.userAgent);
-  const FIELDS = ["file", "gif", "preview", "thumb", "spec", "midi", "jpg"]; // jpg: 맵 이미지의 4000px JPG
+  const FIELDS = ["file", "gif", "preview", "thumb", "spec", "midi", "jpg", "pack", "sheet"]; // jpg: 맵 JPG, pack: 맵 받기 묶음(zip), sheet: 맵 오브젝트 모아 보기
   const TTL = 30 * 60; // 화면에 쓰는 서명 주소 유효시간(초). 받기는 매번 로그인 확인 후 짧은 주소로 받는다
   const useNcp = cfg.storage === "ncp";
   let sb = null;
@@ -196,7 +196,7 @@
   // 비공개 버킷 경로 → 짧은 서명 주소 (원래 경로는 it.src에 보관)
   async function signItems(items) {
     for (const it of items) it.src ??= Object.fromEntries(FIELDS.filter((f) => it[f]).map((f) => [f, it[f]]));
-    const show = ["thumb", "preview", "gif"]; // 화면에 쓰는 것만 서명. file·spec은 받을 때 따로 받는다
+    const show = ["thumb", "preview", "gif", "sheet"]; // 화면에 쓰는 것만 서명(sheet: 맵 오브젝트 모아 보기). file·spec·pack은 받을 때 따로 받는다
     const paths = [...new Set(items.flatMap((it) => show.map((f) => it.src[f]).filter(Boolean)))];
     const map = await signPaths(paths, TTL);
     const missing = paths.filter((p) => !map.has(p));

@@ -10,8 +10,8 @@ const GROUPS = [
     hero: { title: "유물 아이템 컬렉션", sub: (n) => `고려·삼국시대 유물과 교역품 ${n}종` } },
   { key: "animal", label: "동물", sub: "동물 · AI 생성", test: (it) => it.style === "museum-animal", bgs: ["bg-mint", "bg-cream", "bg-lilac"],
     hero: { title: "전통 문양 동물 컬렉션", sub: (n) => `금빛 문양을 두른 상서로운 동물 ${n}종` } },
-  { key: "map", label: "맵 이미지", sub: "맵 이미지 · 4000px 배경", test: (it) => it.kind === "map", bgs: ["bg-sky"],
-    hero: { title: "구름 위 아이소메트릭 맵", sub: (n) => `교실·전시관·공연장 등 4000×4000 맵 배경 ${n}종` } },
+  { key: "map", label: "맵", sub: "맵 · 틀·배경·오브젝트", test: (it) => it.kind === "map", bgs: ["bg-sky"],
+    hero: { title: "구름 위 아이소메트릭 맵", sub: (n) => `회사 맵 PSD 틀로 만든 완성 맵·배경·틀 ${n}종 (틀·바닥 장식·오브젝트를 나눠 받기)` } },
   { key: "effect", label: "효과 GIF", sub: "효과 · 움직이는 GIF", test: (it) => it.kind === "effect", bgs: ["bg-night"],
     hero: { title: "움직이는 효과 GIF", sub: (n) => `차원문·반짝임·퀘스트 표시 등 ${n}종` } },
   { key: "sign", label: "안내 글자", sub: "안내 글자 · 움직이는 GIF", test: (it) => it.kind === "sign", bgs: ["bg-floor"] },
@@ -187,7 +187,7 @@ function card(it) {
   paintPlus(plus, it);
   plus.addEventListener("click", () => { toggleBag(it.id); paintPlus(plus, it); });
   const audio = isAudio(it);
-  const badge = audio ? audioLabel(it) : it.kind === "sign" ? "움직이는 GIF" : it.kind === "map" ? `${it.size[0]}×${it.size[1]}` : it.gif && it.kind === "illust" ? (it.motion ? `GIF · ${it.motion}` : "GIF 포함") : null;
+  const badge = audio ? audioLabel(it) : it.kind === "sign" ? "움직이는 GIF" : it.kind === "map" ? (it.part === "map" ? `오브젝트 ${it.objects}개` : it.part === "frame" ? "틀 · 투명 PNG" : "배경") : it.gif && it.kind === "illust" ? (it.motion ? `GIF · ${it.motion}` : "GIF 포함") : null;
   const play = audio ? el("button", { class: "play", type: "button", "data-id": it.id, "aria-label": `${it.name} 미리 듣기`, "aria-pressed": "false" }, "▶") : null;
   if (play) play.addEventListener("click", (e) => { e.stopPropagation(); togglePlay(it); });
   return el("article", { class: "card", "data-id": it.id },
@@ -307,12 +307,14 @@ const pathOf = (it, f) => (it.src ? it.src[f] : it[f]);
 
 function filesOf(it, hires) {
   const folder = groupOf(it).label;
-  it = { ...it, file: pathOf(it, "file"), gif: pathOf(it, "gif"), preview: pathOf(it, "preview"), midi: pathOf(it, "midi") };
+  it = { ...it, file: pathOf(it, "file"), gif: pathOf(it, "gif"), preview: pathOf(it, "preview"), midi: pathOf(it, "midi"), jpg: pathOf(it, "jpg"), pack: pathOf(it, "pack") };
   const name = it.name.replace(/[\\/:*?"<>|]/g, "_");
   if (isAudio(it)) return [[it.file, `${folder}/${name}.mp3`], hires && it.midi && [it.midi, `${folder}/${name}.mid`]].filter(Boolean);
   if (it.kind === "illust") return [[it.file, `${folder}/${name}.png`], it.gif && [it.gif, `${folder}/${name}.gif`], hires && [it.preview, `${folder}/${name}_고해상도.png`]].filter(Boolean);
   if (it.kind === "effect") return [[it.file, `${folder}/${name}.gif`], hires && [it.preview, `${folder}/${name}_240.gif`]].filter(Boolean);
-  if (it.kind === "map") return [[pathOf(it, "jpg"), `${folder}/${name}.jpg`], hires && [it.file, `${folder}/${name}.png`]].filter(Boolean); // 기본은 가벼운 JPG, 고해상도를 고르면 PNG 원본도
+  // 맵: 틀은 투명 PNG, 배경은 JPG(고해상도를 고르면 PNG도), 완성 맵은 JPG + 레이어·오브젝트 묶음 ZIP(고해상도를 고르면 PNG도)
+  if (it.kind === "map" && it.part === "frame") return [[it.file, `${folder}/${name}.png`]];
+  if (it.kind === "map") return [[it.jpg, `${folder}/${name}.jpg`], it.pack && [it.pack, `${folder}/${name}_레이어·오브젝트.zip`], hires && [it.file, `${folder}/${name}.png`]].filter(Boolean);
   if (it.kind === "sign") return [[it.gif, `${folder}/${name}.gif`], [it.file, `${folder}/${name}.png`], hires && [it.preview, `${folder}/${name}_고해상도.png`]].filter(Boolean);
   return [[it.file, `${folder}/${name}.png`], hires && [it.preview, `${folder}/${name}_확대.png`]].filter(Boolean);
 }
@@ -367,7 +369,12 @@ function sizeLabel(it) {
   const [w, h] = it.size;
   if (it.kind === "illust") return `ZEP용 ${w}×${h}px${it.gif ? " · GIF 120×120" : ""} · 고해상도 ${it.hiresSize[0]}×${it.hiresSize[1]}px`;
   if (it.kind === "effect") return `GIF ${w}×${h}px · 큰 GIF ${it.hiresSize[0]}×${it.hiresSize[1]}px`;
-  if (it.kind === "map") return `맵 배경 ${w}×${h}px (32px 타일 ${it.tiles[0]}×${it.tiles[1]}칸) · PNG·JPG`;
+  if (it.kind === "map") {
+    const base = `${w}×${h}px (32px 타일 ${it.tiles[0]}×${it.tiles[1]}칸, 회사 맵 PSD 크기)`;
+    if (it.part === "frame") return `틀 ${base} · 방 밖이 투명한 PNG`;
+    if (it.part === "background") return `배경 ${base} · PNG·JPG`;
+    return `완성 맵 ${base} · PNG·JPG + 레이어(배경·틀·바닥 장식·오브젝트)·오브젝트 조각 ${it.objects}개·위치표 ZIP`;
+  }
   if (it.kind === "sign") return `움직이는 GIF ${w}×${h}px · 정지 PNG ${it.stillSize[0]}×${it.stillSize[1]}px · 고해상도 ${it.hiresSize[0]}×${it.hiresSize[1]}px`;
   return `${w}×${h}px · ${it.tiles[0]}×${it.tiles[1]}칸 (32px 타일)`;
 }
@@ -447,8 +454,13 @@ function openDetail(it) {
   $("#d-cat").textContent = subOf(it);
   $("#d-name").textContent = it.name;
   $("#d-desc").textContent = it.description;
-  $("#d-motion").hidden = !(illust && it.gif);
-  if (illust && it.gif) $("#d-gifimg").src = it.gif;
+  // 움직이는 GIF 미리보기 칸: 일러스트는 실제 크기 GIF, 완성 맵은 오려 낸 오브젝트 모아 보기
+  const sheet = map && it.part === "map" && it.sheet;
+  $("#d-motion").hidden = !((illust && it.gif) || sheet);
+  $("#d-motion").classList.toggle("sheet", !!sheet);
+  $("#d-motion-label").textContent = sheet ? `오려 낸 오브젝트 ${it.objects}개 (받기 묶음에 조각·위치표가 들어 있어요)` : "실제 크기 GIF 미리보기";
+  if (sheet) $("#d-gifimg").src = it.sheet;
+  else if (illust && it.gif) $("#d-gifimg").src = it.gif;
   $("#d-size").textContent = sizeLabel(it);
   $("#d-ref").textContent = it.reference || "-";
   $("#d-gen").replaceChildren(...(it.score != null ? [starRating(it.score, "stars inline"), `${it.generator} · 디자인 점수 ${it.score}점`] : [it.generator]));
@@ -459,9 +471,9 @@ function openDetail(it) {
     setLink("#d-big", pathOf(it, "midi"), `${it.id}.mid`, "미디 원본(.mid)");
     setLink("#d-spec", null);
   } else if (map) {
-    setLink("#d-png", pathOf(it, "file"), `${it.id}.png`, `PNG ${it.size[0]}×${it.size[1]}`);
-    setLink("#d-gif", pathOf(it, "jpg"), `${it.id}.jpg`, `JPG ${it.size[0]}×${it.size[1]} (가벼움)`);
-    setLink("#d-big", null);
+    setLink("#d-png", pathOf(it, "file"), `${it.id}.png`, it.part === "frame" ? `투명 PNG ${it.size[0]}×${it.size[1]}` : `PNG ${it.size[0]}×${it.size[1]}`);
+    setLink("#d-gif", it.part === "frame" ? null : pathOf(it, "jpg"), `${it.id}.jpg`, `JPG ${it.size[0]}×${it.size[1]} (가벼움)`);
+    setLink("#d-big", it.part === "map" ? pathOf(it, "pack") : null, `${it.id}-레이어·오브젝트.zip`, "레이어·오브젝트 묶음 ZIP");
     setLink("#d-spec", null);
   } else if (sign) {
     setLink("#d-png", pathOf(it, "gif"), `${it.id}.gif`, `움직이는 GIF ${it.size[0]}×${it.size[1]}`);
