@@ -108,6 +108,11 @@ a { color: inherit; }
 .heart svg { width: 22px; height: 22px; fill: none; stroke: var(--ink); stroke-width: 2; stroke-linejoin: round; }
 .heart[aria-pressed="true"] svg { fill: var(--accent); stroke: var(--accent); }
 .anim { pointer-events: none; position: absolute; left: 14px; top: 14px; font-size: 12px; font-weight: 700; background: rgba(255, 255, 255, 0.9); padding: 4px 10px; border-radius: 999px; }
+/* 디자인 점수 별점: 썸네일 왼쪽 아래 (별 5개 회색 위에 점수만큼 금색을 덮는다) */
+.stars { pointer-events: none; position: absolute; left: 14px; bottom: 14px; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 800; line-height: 1; background: rgba(255, 255, 255, 0.92); padding: 5px 10px; border-radius: 999px; color: var(--ink); }
+.stars-bar { position: relative; display: inline-block; white-space: nowrap; color: #d6d3de; }
+.stars-on { position: absolute; left: 0; top: 0; overflow: hidden; white-space: nowrap; color: #f5a700; }
+.stars.inline { position: static; margin-right: 8px; background: var(--soft); vertical-align: middle; }
 .card-foot { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .card h3 { margin: 0; font-size: 21px; font-weight: 800; letter-spacing: -0.01em; }
 .card .sub { margin: 4px 0 0; color: var(--muted); font-size: 15px; }
@@ -155,6 +160,9 @@ dialog::backdrop { background: rgba(22, 20, 28, 0.55); }
 .play:hover { background: #000; }
 .play[aria-pressed="true"] { background: var(--accent, #e0457b); }
 .tile.audio img { max-width: 100%; max-height: 100%; width: 100%; height: 100%; object-fit: cover; filter: none; border-radius: inherit; }
+/* 맵 이미지: 하늘 배경까지 그림이라 카드·상세를 꽉 채운다 */
+.tile.mapimg img { max-width: 100%; max-height: 100%; width: 100%; height: 100%; object-fit: cover; filter: none; border-radius: inherit; }
+.stage.mapimg img { max-width: 100%; max-height: 100%; border-radius: 12px; }
 .player { width: 100%; margin-bottom: 12px; }
 .motion { display: flex; align-items: center; gap: 12px; background: var(--soft); border-radius: 16px; padding: 8px 14px 8px 8px; margin-bottom: 12px; color: var(--muted); font-size: 13px; }
 .motion img { width: 120px; height: 120px; background: #fff; border-radius: 12px; }
@@ -206,6 +214,7 @@ dd { margin: 0; }
   .card .sub { font-size: 13px; }
   .plus { width: 40px; height: 40px; font-size: 22px; border-radius: 12px; }
   .heart { width: 38px; height: 38px; top: 10px; right: 10px; }
+  .stars { left: 8px; bottom: 8px; font-size: 11px; gap: 4px; padding: 4px 8px; }
   .detail { grid-template-columns: 1fr; }
   .stage { min-height: 260px; }
 }

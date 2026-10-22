@@ -11,6 +11,7 @@
     item: ["style", "museum-item"],
     animal: ["style", "museum-animal"],
     effect: ["kind", "effect"],
+    map: ["kind", "map"],
     sign: ["kind", "sign"],
     sfx: ["kind", "sfx"],
     bgm: ["kind", "bgm"],
@@ -23,11 +24,12 @@
     sfx: ["종류", "길이", "소리"],
     sign: ["방향", "색", "쓰임새", "글자 수"],
     effect: ["갈래", "색"],
+    map: ["장소", "하늘", "색감"],
   };
   // 세부 분류 개수를 담은 특별한 행 (애셋이 아니다. 목록·개수에서 뺀다)
   const META_ID = "__facets__";
   // 묶음 이름으로도 찾는다 (예: '캐릭터'로 찾으면 역사 NPC 전부). app.js 칩 이름과 같게
-  const GROUP_LABEL = { character: "캐릭터", item: "아이템", animal: "동물", effect: "효과 gif", sign: "안내 글자 표지판 텍스트 글씨", sfx: "효과음 사운드", bgm: "bgm 배경음악 음악", pixel: "픽셀아트" };
+  const GROUP_LABEL = { character: "캐릭터", item: "아이템", animal: "동물", effect: "효과 gif", map: "맵 이미지 배경", sign: "안내 글자 표지판 텍스트 글씨", sfx: "효과음 사운드", bgm: "bgm 배경음악 음악", pixel: "픽셀아트" };
   const labelGroups = (w) => Object.keys(GROUP_LABEL).filter((g) => GROUP_LABEL[g].includes(w));
 
   // 검색어 → 낱말. 서버 필터 문법·LIKE 와일드카드에 쓰이는 기호는 띄어쓰기로 바꿔 나눈다

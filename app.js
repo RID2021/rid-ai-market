@@ -10,6 +10,8 @@ const GROUPS = [
     hero: { title: "유물 아이템 컬렉션", sub: (n) => `고려·삼국시대 유물과 교역품 ${n}종` } },
   { key: "animal", label: "동물", sub: "동물 · AI 생성", test: (it) => it.style === "museum-animal", bgs: ["bg-mint", "bg-cream", "bg-lilac"],
     hero: { title: "전통 문양 동물 컬렉션", sub: (n) => `금빛 문양을 두른 상서로운 동물 ${n}종` } },
+  { key: "map", label: "맵 이미지", sub: "맵 이미지 · 4000px 배경", test: (it) => it.kind === "map", bgs: ["bg-sky"],
+    hero: { title: "구름 위 아이소메트릭 맵", sub: (n) => `교실·전시관·공연장 등 4000×4000 맵 배경 ${n}종` } },
   { key: "effect", label: "효과 GIF", sub: "효과 · 움직이는 GIF", test: (it) => it.kind === "effect", bgs: ["bg-night"],
     hero: { title: "움직이는 효과 GIF", sub: (n) => `차원문·반짝임·퀘스트 표시 등 ${n}종` } },
   { key: "sign", label: "안내 글자", sub: "안내 글자 · 움직이는 GIF", test: (it) => it.kind === "sign", bgs: ["bg-floor"] },
@@ -171,20 +173,30 @@ function togglePlay(it) {
   player.play().catch((e) => console.warn("재생하지 못했습니다", e));
 }
 
+// 디자인 점수 별점 (사용자 요청 2026-10-22): AI 검수 점수(100점 만점)를 별 5개로. 86점 → 별 4.3개만큼 칠한다
+//   점수가 있는 것(일러스트·맵)만. 코드로 만든 효과·안내 글자·소리는 검수 점수가 없어 별을 달지 않는다
+function starRating(score, cls = "stars") {
+  const v = Math.round(score / 2) / 10;
+  return el("span", { class: cls, title: `디자인 점수 ${score}점 (AI 검수)`, "aria-label": `별점 ${v.toFixed(1)}점 (5점 만점, 디자인 점수 ${score}점)` },
+    el("span", { class: "stars-bar", "aria-hidden": "true" }, "★★★★★", el("span", { class: "stars-on", style: `width:${Math.max(0, Math.min(100, score))}%` }, "★★★★★")),
+    el("b", { "aria-hidden": "true" }, v.toFixed(1)));
+}
+
 function card(it) {
   const plus = el("button", { class: "plus", type: "button" });
   paintPlus(plus, it);
   plus.addEventListener("click", () => { toggleBag(it.id); paintPlus(plus, it); });
   const audio = isAudio(it);
-  const badge = audio ? audioLabel(it) : it.kind === "sign" ? "움직이는 GIF" : it.gif && it.kind === "illust" ? (it.motion ? `GIF · ${it.motion}` : "GIF 포함") : null;
+  const badge = audio ? audioLabel(it) : it.kind === "sign" ? "움직이는 GIF" : it.kind === "map" ? `${it.size[0]}×${it.size[1]}` : it.gif && it.kind === "illust" ? (it.motion ? `GIF · ${it.motion}` : "GIF 포함") : null;
   const play = audio ? el("button", { class: "play", type: "button", "data-id": it.id, "aria-label": `${it.name} 미리 듣기`, "aria-pressed": "false" }, "▶") : null;
   if (play) play.addEventListener("click", (e) => { e.stopPropagation(); togglePlay(it); });
   return el("article", { class: "card", "data-id": it.id },
     el("div", { class: "tile-wrap" },
-      el("button", { class: `tile ${bgOf(it)} ${it.kind === "pixel" ? "pixelart" : ""} ${audio ? "audio" : ""}`, type: "button", "aria-label": `${it.name} 자세히 보기`, onclick: () => openDetail(it) },
+      el("button", { class: `tile ${bgOf(it)} ${it.kind === "pixel" ? "pixelart" : ""} ${audio ? "audio" : ""} ${it.kind === "map" ? "mapimg" : ""}`, type: "button", "aria-label": `${it.name} 자세히 보기`, onclick: () => openDetail(it) },
         el("img", { src: it.thumb ?? it.preview, alt: "", loading: "lazy" })),
       badge ? el("span", { class: "anim" }, badge) : null,
       play,
+      !play && it.score != null ? starRating(it.score) : null,
       heartBtn(it)),
     el("div", { class: "card-foot" },
       el("div", {}, el("h3", {}, it.name), el("p", { class: "sub" }, subOf(it))),
@@ -300,6 +312,7 @@ function filesOf(it, hires) {
   if (isAudio(it)) return [[it.file, `${folder}/${name}.mp3`], hires && it.midi && [it.midi, `${folder}/${name}.mid`]].filter(Boolean);
   if (it.kind === "illust") return [[it.file, `${folder}/${name}.png`], it.gif && [it.gif, `${folder}/${name}.gif`], hires && [it.preview, `${folder}/${name}_고해상도.png`]].filter(Boolean);
   if (it.kind === "effect") return [[it.file, `${folder}/${name}.gif`], hires && [it.preview, `${folder}/${name}_240.gif`]].filter(Boolean);
+  if (it.kind === "map") return [[pathOf(it, "jpg"), `${folder}/${name}.jpg`], hires && [it.file, `${folder}/${name}.png`]].filter(Boolean); // 기본은 가벼운 JPG, 고해상도를 고르면 PNG 원본도
   if (it.kind === "sign") return [[it.gif, `${folder}/${name}.gif`], [it.file, `${folder}/${name}.png`], hires && [it.preview, `${folder}/${name}_고해상도.png`]].filter(Boolean);
   return [[it.file, `${folder}/${name}.png`], hires && [it.preview, `${folder}/${name}_확대.png`]].filter(Boolean);
 }
@@ -354,6 +367,7 @@ function sizeLabel(it) {
   const [w, h] = it.size;
   if (it.kind === "illust") return `ZEP용 ${w}×${h}px${it.gif ? " · GIF 120×120" : ""} · 고해상도 ${it.hiresSize[0]}×${it.hiresSize[1]}px`;
   if (it.kind === "effect") return `GIF ${w}×${h}px · 큰 GIF ${it.hiresSize[0]}×${it.hiresSize[1]}px`;
+  if (it.kind === "map") return `맵 배경 ${w}×${h}px (32px 타일 ${it.tiles[0]}×${it.tiles[1]}칸) · PNG·JPG`;
   if (it.kind === "sign") return `움직이는 GIF ${w}×${h}px · 정지 PNG ${it.stillSize[0]}×${it.stillSize[1]}px · 고해상도 ${it.hiresSize[0]}×${it.hiresSize[1]}px`;
   return `${w}×${h}px · ${it.tiles[0]}×${it.tiles[1]}칸 (32px 타일)`;
 }
@@ -419,8 +433,8 @@ function retryDetailAudio() {
 }
 
 function openDetail(it) {
-  const illust = it.kind === "illust", effect = it.kind === "effect", audio = isAudio(it), sign = it.kind === "sign";
-  $("#d-stage").className = `stage ${bgOf(it)} ${audio ? "audio" : ""}`;
+  const illust = it.kind === "illust", effect = it.kind === "effect", audio = isAudio(it), sign = it.kind === "sign", map = it.kind === "map";
+  $("#d-stage").className = `stage ${bgOf(it)} ${audio ? "audio" : ""} ${map ? "mapimg" : ""}`;
   $("#d-img").src = sign ? it.gif : effect ? it.preview : illust || audio ? it.thumb ?? it.preview : it.preview;
   player.pause();
   const da = $("#d-audio");
@@ -437,12 +451,17 @@ function openDetail(it) {
   if (illust && it.gif) $("#d-gifimg").src = it.gif;
   $("#d-size").textContent = sizeLabel(it);
   $("#d-ref").textContent = it.reference || "-";
-  $("#d-gen").textContent = it.score != null ? `${it.generator} · ${it.score}점` : it.generator;
+  $("#d-gen").replaceChildren(...(it.score != null ? [starRating(it.score, "stars inline"), `${it.generator} · 디자인 점수 ${it.score}점`] : [it.generator]));
   $("#d-tags").replaceChildren(...it.tags.map((t) => el("button", { class: "tag", type: "button", onclick: () => { $("#detail").close(); setQuery(t); } }, `#${t}`)));
   if (audio) {
     setLink("#d-png", pathOf(it, "file"), `${it.id}.mp3`, "MP3 받기");
     setLink("#d-gif", null);
     setLink("#d-big", pathOf(it, "midi"), `${it.id}.mid`, "미디 원본(.mid)");
+    setLink("#d-spec", null);
+  } else if (map) {
+    setLink("#d-png", pathOf(it, "file"), `${it.id}.png`, `PNG ${it.size[0]}×${it.size[1]}`);
+    setLink("#d-gif", pathOf(it, "jpg"), `${it.id}.jpg`, `JPG ${it.size[0]}×${it.size[1]} (가벼움)`);
+    setLink("#d-big", null);
     setLink("#d-spec", null);
   } else if (sign) {
     setLink("#d-png", pathOf(it, "gif"), `${it.id}.gif`, `움직이는 GIF ${it.size[0]}×${it.size[1]}`);
@@ -471,7 +490,7 @@ function openDetail(it) {
 // ---------- 검색·추천 검색어 (추천 검색어: 사용자 요청 2026-10-21) ----------
 // 검색은 입력을 잠깐 멈췄을 때 서버에 묻는다. 검색창을 누르면 최근 검색어·추천 검색어를, 글자를 치면 맞는 이름·태그를 아래에 보여 준다.
 // 추천 목록은 동기화가 서버의 메타 행에 만들어 둔 것을 처음 한 번만 받는다 (글자마다 서버에 묻지 않는다)
-const POPULAR = ["조선", "고려", "신라", "유물", "무기", "십장생", "바다 동물", "곤충", "포털", "미니맵", "포토존", "입구", "획득", "마법", "국악", "신나는", "잔잔한", "전투"];
+const POPULAR = ["맵", "교실", "조선", "고려", "신라", "유물", "무기", "십장생", "바다 동물", "곤충", "포털", "미니맵", "포토존", "입구", "획득", "마법", "국악", "신나는", "잔잔한", "전투"];
 const RECENT_KEY = "ridmarket.recent";
 function setupSearch() {
   const q = $("#q"), box = $("#suggest");
