@@ -10,8 +10,13 @@ const GROUPS = [
     hero: { title: "유물 아이템 컬렉션", sub: (n) => `고려·삼국시대 유물과 교역품 ${n}종` } },
   { key: "animal", label: "동물", sub: "동물 · AI 생성", test: (it) => it.style === "museum-animal", bgs: ["bg-mint", "bg-cream", "bg-lilac"],
     hero: { title: "전통 문양 동물 컬렉션", sub: (n) => `금빛 문양을 두른 상서로운 동물 ${n}종` } },
-  { key: "map", label: "맵", sub: "맵 · 틀·배경·오브젝트", test: (it) => it.kind === "map", bgs: ["bg-sky"],
-    hero: { title: "구름 위 아이소메트릭 맵", sub: (n) => `회사 맵 PSD 틀로 만든 완성 맵·배경·틀 ${n}종 (틀·바닥 장식·오브젝트를 나눠 받기)` } },
+  // 맵은 완성 맵·틀·배경을 따로 묶는다 (사용자 요청 2026-10-24 "맵이랑 틀은 좀 나눠 줄 수 있을까?")
+  { key: "map", label: "맵", sub: "맵 · 완성 맵·오브젝트", test: (it) => it.kind === "map" && it.part === "map", bgs: ["bg-sky"],
+    hero: { title: "아이소메트릭 완성 맵", sub: (n) => `틀 위에 오브젝트를 얹은 완성 맵 ${n}종 (배경·틀·바닥 장식·오브젝트를 나눠 받기)` } },
+  { key: "frame", label: "틀", sub: "틀 · 빈 방 투명 PNG", test: (it) => it.kind === "map" && it.part === "frame", bgs: ["bg-sky"],
+    hero: { title: "빈 방 틀 컬렉션", sub: (n) => `회사 맵 PSD 모양 그대로, 벽·바닥 질감을 고른 빈 방 ${n}종 (바닥·벽 따로 받기)` } },
+  { key: "mapbg", label: "배경", sub: "배경 · 맵 바탕 그림", test: (it) => it.kind === "map" && it.part === "background", bgs: ["bg-sky"],
+    hero: { title: "맵 배경 컬렉션", sub: (n) => `바다·숲·도시·우주 등 틀을 얹어 쓰는 배경 ${n}종` } },
   { key: "effect", label: "효과 GIF", sub: "효과 · 움직이는 GIF", test: (it) => it.kind === "effect", bgs: ["bg-night"],
     hero: { title: "움직이는 효과 GIF", sub: (n) => `차원문·반짝임·퀘스트 표시 등 ${n}종` } },
   { key: "sign", label: "안내 글자", sub: "안내 글자 · 움직이는 GIF", test: (it) => it.kind === "sign", bgs: ["bg-floor"] },
@@ -112,7 +117,7 @@ async function renderFacets() {
     try { list = await state.source.facets(group); if (list.length) facetCache.set(group, list); } catch (e) { console.warn(e); list = []; }
   }
   if (my !== facetSeq || state.group !== group) return; // 그사이 다른 칩을 눌렀다
-  const rows = order.map((g) => [g, list.filter((f) => f.facet.startsWith(`${g}:`))]).filter(([, fs]) => fs.length > 1 || (fs.length === 1 && g !== "박자"));
+  const rows = order.map((g) => [g, list.filter((f) => f.facet.startsWith(`${g}:`))]).filter(([g, fs]) => fs.length > 1 || (fs.length === 1 && g !== "박자"));
   box.hidden = rows.length === 0;
   box.replaceChildren(
     ...rows.map(([g, fs]) => el("div", { class: "facet-row" },

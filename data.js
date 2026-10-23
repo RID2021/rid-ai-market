@@ -11,7 +11,10 @@
     item: ["style", "museum-item"],
     animal: ["style", "museum-animal"],
     effect: ["kind", "effect"],
-    map: ["kind", "map"],
+    // 맵은 완성 맵·틀·배경을 따로 묶는다 (사용자 요청 2026-10-24 "맵이랑 틀은 좀 나눠 줄 수 있을까?")
+    map: ["part", "map"],
+    frame: ["part", "frame"],
+    mapbg: ["part", "background"],
     sign: ["kind", "sign"],
     sfx: ["kind", "sfx"],
     bgm: ["kind", "bgm"],
@@ -24,12 +27,14 @@
     sfx: ["종류", "길이", "소리"],
     sign: ["방향", "색", "쓰임새", "글자 수"],
     effect: ["갈래", "색"],
-    map: ["구성", "장소", "틀", "테마", "쓰임", "종류", "하늘", "색", "포인트 색", "색감"],
+    map: ["장소", "틀", "색감"],
+    frame: ["틀", "테마", "쓰임", "포인트 색"],
+    mapbg: ["장소", "시간·날씨", "색"],
   };
   // 세부 분류 개수를 담은 특별한 행 (애셋이 아니다. 목록·개수에서 뺀다)
   const META_ID = "__facets__";
   // 묶음 이름으로도 찾는다 (예: '캐릭터'로 찾으면 역사 NPC 전부). app.js 칩 이름과 같게
-  const GROUP_LABEL = { character: "캐릭터", item: "아이템", animal: "동물", effect: "효과 gif", map: "맵 배경 틀 오브젝트", sign: "안내 글자 표지판 텍스트 글씨", sfx: "효과음 사운드", bgm: "bgm 배경음악 음악", pixel: "픽셀아트" };
+  const GROUP_LABEL = { character: "캐릭터", item: "아이템", animal: "동물", effect: "효과 gif", map: "맵 완성 맵 오브젝트", frame: "틀 맵 틀 빈 방", mapbg: "배경 맵 배경 바탕", sign: "안내 글자 표지판 텍스트 글씨", sfx: "효과음 사운드", bgm: "bgm 배경음악 음악", pixel: "픽셀아트" };
   const labelGroups = (w) => Object.keys(GROUP_LABEL).filter((g) => GROUP_LABEL[g].includes(w));
 
   // 검색어 → 낱말. 서버 필터 문법·LIKE 와일드카드에 쓰이는 기호는 띄어쓰기로 바꿔 나눈다
@@ -174,11 +179,11 @@
   // 카탈로그에서 묶음별 세부 분류 개수 (동기화가 서버에 저장하는 것과 같은 계산)
   function facetCounts(items) {
     const out = {};
-    for (const kind of Object.keys(FACET_ORDER)) {
+    for (const group of Object.keys(FACET_ORDER)) {
       const counts = new Map();
-      for (const it of items) if (it.kind === kind) for (const f of it.facets ?? []) counts.set(f, (counts.get(f) ?? 0) + 1);
-      const order = FACET_ORDER[kind];
-      out[kind] = [...counts].map(([facet, count]) => ({ facet, count }))
+      for (const it of items) if (groupMatch(it, group)) for (const f of it.facets ?? []) counts.set(f, (counts.get(f) ?? 0) + 1);
+      const order = FACET_ORDER[group];
+      out[group] = [...counts].map(([facet, count]) => ({ facet, count }))
         .sort((a, b) => order.indexOf(a.facet.split(":")[0]) - order.indexOf(b.facet.split(":")[0]) || b.count - a.count || (a.facet < b.facet ? -1 : 1));
     }
     return out;
