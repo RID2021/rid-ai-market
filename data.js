@@ -15,6 +15,8 @@
     map: ["part", "map"],
     frame: ["part", "frame"],
     mapbg: ["part", "background"],
+    // 2000×2000 맵 배경 (사용자 요청 2026-10-27 "2000픽셀이라고 해서 카테고리 만들고 거기다 새로 만들어 줘")
+    bg2000: ["part", "bg2000"],
     sign: ["kind", "sign"],
     sfx: ["kind", "sfx"],
     bgm: ["kind", "bgm"],
@@ -30,11 +32,12 @@
     map: ["장소", "틀", "색감"],
     frame: ["틀", "테마", "쓰임", "포인트 색"],
     mapbg: ["장소", "시간·날씨", "색"],
+    bg2000: ["장소", "실내·실외", "분위기"],
   };
   // 세부 분류 개수를 담은 특별한 행 (애셋이 아니다. 목록·개수에서 뺀다)
   const META_ID = "__facets__";
   // 묶음 이름으로도 찾는다 (예: '캐릭터'로 찾으면 역사 NPC 전부). app.js 칩 이름과 같게
-  const GROUP_LABEL = { character: "캐릭터", item: "아이템", animal: "동물", effect: "효과 gif", map: "맵 완성 맵 오브젝트", frame: "틀 맵 틀 빈 방", mapbg: "배경 맵 배경 바탕", sign: "안내 글자 표지판 텍스트 글씨", sfx: "효과음 사운드", bgm: "bgm 배경음악 음악", pixel: "픽셀아트" };
+  const GROUP_LABEL = { character: "캐릭터", item: "아이템", animal: "동물", effect: "효과 gif", map: "맵 완성 맵 오브젝트", frame: "틀 맵 틀 빈 방", mapbg: "배경 맵 배경 바탕", bg2000: "2000픽셀 2000 배경 맵 배경", sign: "안내 글자 표지판 텍스트 글씨", sfx: "효과음 사운드", bgm: "bgm 배경음악 음악", pixel: "픽셀아트" };
   const labelGroups = (w) => Object.keys(GROUP_LABEL).filter((g) => GROUP_LABEL[g].includes(w));
 
   // 검색어 → 낱말. 서버 필터 문법·LIKE 와일드카드에 쓰이는 기호는 띄어쓰기로 바꿔 나눈다

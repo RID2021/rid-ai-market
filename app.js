@@ -17,6 +17,9 @@ const GROUPS = [
     hero: { title: "빈 방 틀 컬렉션", sub: (n) => `회사 맵 PSD 모양 그대로, 벽·바닥 질감을 고른 빈 방 ${n}종 (바닥·벽 따로 받기)` } },
   { key: "mapbg", label: "배경", sub: "배경 · 맵 바탕 그림", test: (it) => it.kind === "map" && it.part === "background", bgs: ["bg-sky"],
     hero: { title: "맵 배경 컬렉션", sub: (n) => `바다·숲·도시·우주 등 틀을 얹어 쓰는 배경 ${n}종` } },
+  // 2000×2000 맵 배경 (사용자 요청 2026-10-27): 레퍼런스 화풍, 틀 없이 바로 쓰는 한 장짜리 맵
+  { key: "bg2000", label: "2000픽셀", sub: "2000픽셀 · 맵 배경 2000×2000", test: (it) => it.kind === "map" && it.part === "bg2000", bgs: ["bg-sky"],
+    hero: { title: "2000픽셀 맵 배경", sub: (n) => `교실·공원·캠핑장 등 바로 쓰는 2000×2000 맵 배경 ${n}종` } },
   { key: "effect", label: "효과 GIF", sub: "효과 · 움직이는 GIF", test: (it) => it.kind === "effect", bgs: ["bg-night"],
     hero: { title: "움직이는 효과 GIF", sub: (n) => `차원문·반짝임·퀘스트 표시 등 ${n}종` } },
   { key: "sign", label: "안내 글자", sub: "안내 글자 · 움직이는 GIF", test: (it) => it.kind === "sign", bgs: ["bg-floor"] },
@@ -192,7 +195,7 @@ function card(it) {
   paintPlus(plus, it);
   plus.addEventListener("click", () => { toggleBag(it.id); paintPlus(plus, it); });
   const audio = isAudio(it);
-  const badge = audio ? audioLabel(it) : it.kind === "sign" ? "움직이는 GIF" : it.kind === "map" ? (it.part === "map" ? `오브젝트 ${it.objects}개` : it.part === "frame" ? "틀 · 투명 PNG" : "배경") : it.gif && it.kind === "illust" ? (it.motion ? `GIF · ${it.motion}` : "GIF 포함") : null;
+  const badge = audio ? audioLabel(it) : it.kind === "sign" ? "움직이는 GIF" : it.kind === "map" ? (it.part === "map" ? `오브젝트 ${it.objects}개` : it.part === "frame" ? "틀 · 투명 PNG" : it.part === "bg2000" ? "2000×2000" : "배경") : it.gif && it.kind === "illust" ? (it.motion ? `GIF · ${it.motion}` : "GIF 포함") : null;
   const play = audio ? el("button", { class: "play", type: "button", "data-id": it.id, "aria-label": `${it.name} 미리 듣기`, "aria-pressed": "false" }, "▶") : null;
   if (play) play.addEventListener("click", (e) => { e.stopPropagation(); togglePlay(it); });
   return el("article", { class: "card", "data-id": it.id },
@@ -319,7 +322,7 @@ function filesOf(it, hires) {
   if (it.kind === "effect") return [[it.file, `${folder}/${name}.gif`], hires && [it.preview, `${folder}/${name}_240.gif`]].filter(Boolean);
   // 맵: 틀은 투명 PNG(틀·바닥·벽), 배경은 JPG, 완성 맵은 JPG + 레이어·오브젝트 묶음 ZIP(고해상도를 고르면 PNG도)
   if (it.kind === "map" && it.part === "frame") return [[it.file, `${folder}/${name}.png`], it.floorPng && [it.floorPng, `${folder}/${name}_바닥.png`], it.wallPng && [it.wallPng, `${folder}/${name}_벽.png`]].filter(Boolean);
-  if (it.kind === "map" && it.part === "background") return [[it.file, `${folder}/${name}.jpg`]];
+  if (it.kind === "map" && (it.part === "background" || it.part === "bg2000")) return [[it.file, `${folder}/${name}.jpg`]];
   if (it.kind === "map") return [[it.jpg, `${folder}/${name}.jpg`], it.pack && [it.pack, `${folder}/${name}_ZEP용.zip`], it.layers && [it.layers, `${folder}/${name}_레이어.zip`], hires && [it.file, `${folder}/${name}.png`]].filter(Boolean);
   if (it.kind === "sign") return [[it.gif, `${folder}/${name}.gif`], [it.file, `${folder}/${name}.png`], hires && [it.preview, `${folder}/${name}_고해상도.png`]].filter(Boolean);
   return [[it.file, `${folder}/${name}.png`], hires && [it.preview, `${folder}/${name}_확대.png`]].filter(Boolean);
@@ -376,6 +379,7 @@ function sizeLabel(it) {
   if (it.kind === "illust") return `ZEP용 ${w}×${h}px${it.gif ? " · GIF 120×120" : ""} · 고해상도 ${it.hiresSize[0]}×${it.hiresSize[1]}px`;
   if (it.kind === "effect") return `GIF ${w}×${h}px · 큰 GIF ${it.hiresSize[0]}×${it.hiresSize[1]}px`;
   if (it.kind === "map") {
+    if (it.part === "bg2000") return `2000픽셀 맵 배경 ${w}×${h}px (32px 타일 ${it.tiles[0]}×${it.tiles[1]}칸) · JPG · 틀 없이 바로 쓰는 한 장`;
     const base = `${w}×${h}px (32px 타일 ${it.tiles[0]}×${it.tiles[1]}칸, 회사 맵 PSD 크기)`;
     if (it.part === "frame") return `틀 ${base} · 방 밖이 투명한 PNG (틀 전체·바닥·벽 따로)`;
     if (it.part === "background") return `배경 ${base} · JPG`;
@@ -481,7 +485,7 @@ function openDetail(it) {
       setLink("#d-png", pathOf(it, "file"), `${it.id}.png`, `틀 전체 PNG ${it.size[0]}×${it.size[1]}`);
       setLink("#d-gif", pathOf(it, "floorPng"), `${it.id}-바닥.png`, "바닥만 PNG");
       setLink("#d-big", pathOf(it, "wallPng"), `${it.id}-벽.png`, "벽만 PNG");
-    } else if (it.part === "background") {
+    } else if (it.part === "background" || it.part === "bg2000") {
       setLink("#d-png", pathOf(it, "file"), `${it.id}.jpg`, `JPG ${it.size[0]}×${it.size[1]}`);
       setLink("#d-gif", null);
       setLink("#d-big", null);
