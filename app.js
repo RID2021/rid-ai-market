@@ -195,7 +195,7 @@ function card(it) {
   paintPlus(plus, it);
   plus.addEventListener("click", () => { toggleBag(it.id); paintPlus(plus, it); });
   const audio = isAudio(it);
-  const badge = audio ? audioLabel(it) : it.kind === "sign" ? "움직이는 GIF" : it.kind === "map" ? (it.part === "map" ? `오브젝트 ${it.objects}개` : it.part === "frame" ? "틀 · 투명 PNG" : it.part === "bg2000" ? "2000×2000" : "배경") : it.gif && it.kind === "illust" ? (it.motion ? `GIF · ${it.motion}` : "GIF 포함") : null;
+  const badge = audio ? audioLabel(it) : it.kind === "sign" ? "움직이는 GIF" : it.kind === "map" ? (it.part === "map" ? `오브젝트 ${it.objects}개` : it.part === "frame" ? "틀 · 투명 PNG" : it.part === "bg2000" ? (it.objects ? `분리 · 오브젝트 ${it.objects}개` : "2000×2000") : "배경") : it.gif && it.kind === "illust" ? (it.motion ? `GIF · ${it.motion}` : "GIF 포함") : null;
   const play = audio ? el("button", { class: "play", type: "button", "data-id": it.id, "aria-label": `${it.name} 미리 듣기`, "aria-pressed": "false" }, "▶") : null;
   if (play) play.addEventListener("click", (e) => { e.stopPropagation(); togglePlay(it); });
   return el("article", { class: "card", "data-id": it.id },
@@ -322,7 +322,7 @@ function filesOf(it, hires) {
   if (it.kind === "effect") return [[it.file, `${folder}/${name}.gif`], hires && [it.preview, `${folder}/${name}_240.gif`]].filter(Boolean);
   // 맵: 틀은 투명 PNG(틀·바닥·벽), 배경은 JPG, 완성 맵은 JPG + 레이어·오브젝트 묶음 ZIP(고해상도를 고르면 PNG도)
   if (it.kind === "map" && it.part === "frame") return [[it.file, `${folder}/${name}.png`], it.floorPng && [it.floorPng, `${folder}/${name}_바닥.png`], it.wallPng && [it.wallPng, `${folder}/${name}_벽.png`]].filter(Boolean);
-  if (it.kind === "map" && (it.part === "background" || it.part === "bg2000")) return [[it.file, `${folder}/${name}.jpg`]];
+  if (it.kind === "map" && (it.part === "background" || it.part === "bg2000")) return [[it.file, `${folder}/${name}.jpg`], it.pack && [it.pack, `${folder}/${name}_분리묶음.zip`]].filter(Boolean);
   if (it.kind === "map") return [[it.jpg, `${folder}/${name}.jpg`], it.pack && [it.pack, `${folder}/${name}_ZEP용.zip`], it.layers && [it.layers, `${folder}/${name}_레이어.zip`], hires && [it.file, `${folder}/${name}.png`]].filter(Boolean);
   if (it.kind === "sign") return [[it.gif, `${folder}/${name}.gif`], [it.file, `${folder}/${name}.png`], hires && [it.preview, `${folder}/${name}_고해상도.png`]].filter(Boolean);
   return [[it.file, `${folder}/${name}.png`], hires && [it.preview, `${folder}/${name}_확대.png`]].filter(Boolean);
@@ -379,7 +379,7 @@ function sizeLabel(it) {
   if (it.kind === "illust") return `ZEP용 ${w}×${h}px${it.gif ? " · GIF 120×120" : ""} · 고해상도 ${it.hiresSize[0]}×${it.hiresSize[1]}px`;
   if (it.kind === "effect") return `GIF ${w}×${h}px · 큰 GIF ${it.hiresSize[0]}×${it.hiresSize[1]}px`;
   if (it.kind === "map") {
-    if (it.part === "bg2000") return `2000픽셀 맵 배경 ${w}×${h}px (32px 타일 ${it.tiles[0]}×${it.tiles[1]}칸) · JPG · 틀 없이 바로 쓰는 한 장`;
+    if (it.part === "bg2000") return `2000픽셀 맵 배경 ${w}×${h}px (32px 타일 ${it.tiles[0]}×${it.tiles[1]}칸) · JPG · 틀 없이 바로 쓰는 한 장` + (it.objects ? ` · 바닥·오브젝트 분리 묶음(오브젝트 ${it.objects}개)` : "");
     const base = `${w}×${h}px (32px 타일 ${it.tiles[0]}×${it.tiles[1]}칸, 회사 맵 PSD 크기)`;
     if (it.part === "frame") return `틀 ${base} · 방 밖이 투명한 PNG (틀 전체·바닥·벽 따로)`;
     if (it.part === "background") return `배경 ${base} · JPG`;
@@ -464,11 +464,12 @@ function openDetail(it) {
   $("#d-cat").textContent = subOf(it);
   $("#d-name").textContent = it.name;
   $("#d-desc").textContent = it.description;
-  // 움직이는 GIF 미리보기 칸: 일러스트는 실제 크기 GIF, 완성 맵은 오려 낸 오브젝트 모아 보기
-  const sheet = map && it.part === "map" && it.sheet;
+  // 움직이는 GIF 미리보기 칸: 일러스트는 실제 크기 GIF, 완성 맵은 오려 낸 오브젝트 모아 보기, 2000픽셀은 따로 그린 오브젝트 모아 보기
+  const sheet = map && (it.part === "map" || it.part === "bg2000") && it.sheet;
   $("#d-motion").hidden = !((illust && it.gif) || sheet);
   $("#d-motion").classList.toggle("sheet", !!sheet);
-  $("#d-motion-label").textContent = sheet ? `오려 낸 오브젝트 ${it.objects}개 (받기 묶음에 조각·위치표가 들어 있어요)` : "실제 크기 GIF 미리보기";
+  $("#d-motion-label").textContent = !sheet ? "실제 크기 GIF 미리보기" : it.part === "bg2000"
+    ? `따로 그린 오브젝트 ${it.objects}개 (분리 묶음에 바닥·오브젝트·위치표가 들어 있어요)` : `오려 낸 오브젝트 ${it.objects}개 (받기 묶음에 조각·위치표가 들어 있어요)`;
   if (sheet) $("#d-gifimg").src = it.sheet;
   else if (illust && it.gif) $("#d-gifimg").src = it.gif;
   $("#d-size").textContent = sizeLabel(it);
@@ -487,7 +488,8 @@ function openDetail(it) {
       setLink("#d-big", pathOf(it, "wallPng"), `${it.id}-벽.png`, "벽만 PNG");
     } else if (it.part === "background" || it.part === "bg2000") {
       setLink("#d-png", pathOf(it, "file"), `${it.id}.jpg`, `JPG ${it.size[0]}×${it.size[1]}`);
-      setLink("#d-gif", null);
+      // 분리 묶음: 바닥.jpg + 오브젝트(투명 PNG) + 위치.json + 완성 미리보기 (2026-10-27)
+      setLink("#d-gif", it.pack ? pathOf(it, "pack") : null, `${it.id}-분리묶음.zip`, `바닥·오브젝트 분리 묶음 ZIP (바닥 + 오브젝트 ${it.objects}개 + 위치표)`);
       setLink("#d-big", null);
     } else {
       setLink("#d-png", pathOf(it, "file"), `${it.id}.png`, `PNG ${it.size[0]}×${it.size[1]}`);
