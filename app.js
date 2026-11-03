@@ -380,7 +380,7 @@ function sizeLabel(it) {
   if (it.kind === "effect") return `GIF ${w}×${h}px · 큰 GIF ${it.hiresSize[0]}×${it.hiresSize[1]}px`;
   if (it.kind === "map") {
     if (it.part === "bg2000") return `2000픽셀 맵 배경 ${w}×${h}px (32px 타일 ${it.tiles[0]}×${it.tiles[1]}칸) · JPG · 틀 없이 바로 쓰는 한 장` + (it.objects ? ` · 바닥·오브젝트 분리 묶음(오브젝트 ${it.objects}개)` : "");
-    const base = `${w}×${h}px (32px 타일 ${it.tiles[0]}×${it.tiles[1]}칸, 회사 맵 PSD 크기)`;
+    const base = `${w}×${h}px (32px 타일 ${it.tiles[0]}×${it.tiles[1]}칸${w === 4096 && h === 2912 ? ", 회사 맵 PSD 크기" : ""})`;
     if (it.part === "frame") return `틀 ${base} · 방 밖이 투명한 PNG (틀 전체·바닥·벽 따로)`;
     if (it.part === "background") return `배경 ${base} · JPG`;
     return `완성 맵 ${base} · PNG·JPG + ZEP용 묶음(배경화면·오브젝트 조각 ${it.objects}개·위치표)·레이어 묶음 ZIP (파일은 모두 10MB 이하)`;
