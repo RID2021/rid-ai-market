@@ -680,7 +680,10 @@ async function main() {
     try { await downloadBag(); } catch (e) { $("#bag-status").textContent = `받기 실패: ${e.message}`; }
     $("#bag-zip").disabled = false;
   });
-  for (const d of [$("#detail"), $("#bag")]) d.addEventListener("click", (e) => { if (e.target === d) d.close(); });
+  // 바깥(배경)을 누르면 닫기는 <dialog closedby="any">가 한다. 그 기능이 없는 브라우저(Safari 등)에서만 스크립트로
+  if (!("closedBy" in HTMLDialogElement.prototype)) {
+    for (const d of [$("#detail"), $("#bag")]) d.addEventListener("click", (e) => { if (e.target === d) d.close(); });
+  }
   $("#detail").addEventListener("close", () => { $("#d-audio").pause(); history.replaceState(null, "", location.pathname + location.search); });
   // 주소에 #애셋id가 있으면 그 애셋을 받아 바로 연다 (실패해도 목록은 그대로 둔다)
   try {

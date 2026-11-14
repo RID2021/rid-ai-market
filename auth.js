@@ -249,7 +249,8 @@
     if (avatar) $("#user-avatar").src = avatar;
     $("#user-initial").textContent = avatar ? "" : (profile.email || "?").slice(0, 1).toUpperCase();
     $("#me-email").textContent = shown(profile.email);
-    btn.onclick = () => $("#me").showModal();
+    // 버튼의 command="show-modal"이 대화상자를 연다. 그 기능이 없는 옛 브라우저에서만 스크립트로 연다
+    if (!("commandForElement" in HTMLButtonElement.prototype)) btn.onclick = () => $("#me").showModal();
     // 아이디 계정만 비밀번호를 바꿀 수 있다 (Microsoft·Google 계정은 비밀번호가 없다)
     const form = $("#pw-form");
     form.hidden = !isGuest(profile.email);
